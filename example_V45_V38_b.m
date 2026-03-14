@@ -62,7 +62,8 @@ rng(0);
 
 %% Persistent logging setup
 run_timestamp = datestr(now, 'yyyymmdd_HHMMSS');
-log_filename  = sprintf('wsn_log_%s.log', run_timestamp);
+if ~exist('logs', 'dir'), mkdir('logs'); end
+log_filename  = sprintf('logs/wsn_log_%s.log', run_timestamp);
 mat_filename  = sprintf('wsn_data_%s.mat', run_timestamp);
 fid = fopen(log_filename, 'w');
 if fid == -1, error('Cannot open log file: %s', log_filename); end
