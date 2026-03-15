@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(where python 2>/dev/null || where python3 2>/dev/null || where py 2>/dev/null)",
+      "Bash(C:/Users/abel/AppData/Local/Programs/Python/Python313/python.exe:*)",
+      "Bash(ls:*)",
+      "Bash(head:*)",
+      "Bash(cat:*)",
+      "Bash(/c/Users/abel/AppData/Local/Programs/Python/Python313/python:*)",
+      "Bash(echo matlab not found in PATH:*)",
+      "Bash(tail:*)"
+    ]
+  }
+}

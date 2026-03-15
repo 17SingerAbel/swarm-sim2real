@@ -65,6 +65,7 @@ run_timestamp = datestr(now, 'yyyymmdd_HHMMSS');
 if ~exist('logs', 'dir'), mkdir('logs'); end
 log_filename  = sprintf('logs/wsn_log_%s.log', run_timestamp);
 mat_filename  = sprintf('wsn_data_%s.mat', run_timestamp);
+global fid;
 fid = fopen(log_filename, 'w');
 if fid == -1, error('Cannot open log file: %s', log_filename); end
 fprintf(fid, '[t= 0.00][INIT] Simulation started: %s\n', run_timestamp);
@@ -288,18 +289,23 @@ last_contour_state = 0;
 
 %% FSM Helper Functions
 
-% Log state transition
+% Log sensor state/role transition to log file
 function logStateTransition(sensor_id, old_state, new_state, old_role, new_role, time, reason)
     if strcmp(old_state, new_state) && strcmp(old_role, new_role)
-        return; % No change
+        return; % No change — nothing to log
     end
+    global fid;
+    fprintf(fid, '[t=%5.2f][FSM] Sensor %2d: %s/%s -> %s/%s | %s\n', ...
+        time, sensor_id, old_state, old_role, new_state, new_role, reason);
 end
 
-% Log system state transition
+% Log system-level FSM transition to log file
 function logSystemTransition(old_state, new_state, time, reason)
     if strcmp(old_state, new_state)
-        return; % No change
+        return; % No change — nothing to log
     end
+    global fid;
+    fprintf(fid, '[t=%5.2f][SYS] System: %s -> %s | %s\n', time, old_state, new_state, reason);
 end
 
 % NEW: Calculate when a tracker will lose the target
