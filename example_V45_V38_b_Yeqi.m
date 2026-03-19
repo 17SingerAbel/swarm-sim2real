@@ -64,7 +64,7 @@ rng(0);
 run_timestamp = datestr(now, 'yyyymmdd_HHMMSS');
 if ~exist('logs', 'dir'), mkdir('logs'); end
 log_filename  = sprintf('logs/wsn_log_%s.log', run_timestamp);
-mat_filename  = sprintf('wsn_data_%s.mat', run_timestamp);
+mat_filename  = sprintf('logs/wsn_data_%s.mat', run_timestamp);
 global fid;
 fid = fopen(log_filename, 'w');
 if fid == -1, error('Cannot open log file: %s', log_filename); end
@@ -998,8 +998,14 @@ for t = 1:simulation_time/dt
                                                 
                                                 % Check if teams don't overlap
                                                 if isempty(intersect(team1, team2))
-                                                    cost1 = all_target_bids(i1, 1) + all_target_bids(i2, 1);
-                                                    cost2 = all_target_bids(i3, 2) + all_target_bids(i4, 2);
+                                                    idx1 = find(available_sensors == top_sensors_combined(i1));
+                                                    idx2 = find(available_sensors == top_sensors_combined(i2));
+
+                                                    cost1 = all_target_bids(idx1,1) + all_target_bids(idx2,1);
+                                                    % cost1 = all_target_bids(i1, 1) + all_target_bids(i2, 1);
+                                                    idx3 = find(available_sensors == top_sensors_combined(i3));
+                                                    idx4 = find(available_sensors == top_sensors_combined(i4));
+                                                    cost2 = all_target_bids(idx3, 2) + all_target_bids(idx4, 2);
                                                     max_cost = max(cost1, cost2);
                                                     
                                                     valid_assignments = [valid_assignments; {team1, team2}];
@@ -2773,7 +2779,7 @@ function plotSingleSensorTrajectory(sensor_id, sensor_trajectories, original_pos
     sensor_color = colors(sensor_id,:);
     
     % Plot both target trajectories
-    target_colors = {'r', 'g'};
+    target_colors = {'r', 'g', 'b'};
     for target_id = 1:length(target_trajectories)
         if ~isempty(target_trajectories{target_id})
             h1 = plot(target_trajectories{target_id}(:,1), target_trajectories{target_id}(:,2), ...
