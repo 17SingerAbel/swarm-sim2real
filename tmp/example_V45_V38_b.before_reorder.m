@@ -4,12 +4,12 @@
 % TU: time unit
 % comments - adding IDLE role- fixing a bug with the primary-secondary role
 % - Prof asked for target trajetory which looks like Military evasive maneuvers - sharp turns but not constantly turning.
-% this is what he said: "Changes in motion direction should not be
+% this is what he said: "Changes in motion direction should not be                 
 % restricted to small variations.  They should be in the range of 15 to 30 degrees. Not too frequent."
 % July 24th: Prof asked why S15 is chosen instead of S5 at t = 45 (s)? lots
-% of debug output in this code.
+% of debug output in this code. 
 % July 25th: now i am trying to see if some sensors are nearer, they
-% override the aheadness.
+% override the aheadness. 
 % July 28th: Prof says: you need to stop the proximity override approach and simply choose the fastest sensor, period.
 % July 29th: 5 new trajectories-I changed the base direction
 % July 30th: DYNAMIC INTERCEPT CALCULATION
@@ -31,7 +31,7 @@
 
 % V27: this is V24 with some changes to the interceptor. so any interceptor who
 % V30: testing weights
-% has converged EKF, can call for interceptors.
+% has converged EKF, can call for interceptors. 
 % V31: Added dual target tracking: didn't work. moved to V32
 % V31: Added dual target tracking capability with independent target trajectories and competitive bidding system
 % V32: The issue is that interceptors are currently getting the "best"
@@ -47,7 +47,7 @@
 % i edited it: This reduces the search space from 23^4 to roughly 12^4 =
 % 20,736 combinations, making it about 13x faster while still finding
 % near-optimal solutions.
-% V37: 3 targets. I revised the legends to handle more than 3 targets.
+% V37: 3 targets. I revised the legends to handle more than 3 targets. 
 
 % Based on: Original cooperative tracking with interceptor strategy - no
 % debug output
@@ -80,7 +80,7 @@ SYSTEM_STATES = struct(...
     'TRACKING', 'TRACKING', ...
     'SEARCHING', 'SEARCHING', ...
     'REACQUIRING', 'REACQUIRING' ...
-    );
+);
 
 % Sensor-level states - ADDED RETURNING_HOME
 SENSOR_STATES = struct(...
@@ -90,7 +90,7 @@ SENSOR_STATES = struct(...
     'INTERCEPTING', 'INTERCEPTING', ...
     'SEARCHING', 'SEARCHING', ...
     'RETURNING_HOME', 'RETURNING_HOME' ...
-    );
+);
 
 % Sensor roles (within states) - REMOVED BACKUP_TRACKER
 SENSOR_ROLES = struct(...
@@ -98,7 +98,7 @@ SENSOR_ROLES = struct(...
     'PRIMARY_TRACKER', 'PRIMARY_TRACKER', ...
     'SECONDARY_TRACKER', 'SECONDARY_TRACKER', ...
     'INTERCEPTOR_CANDIDATE', 'INTERCEPTOR_CANDIDATE' ...
-    );
+);
 
 %% Simulation Parameters
 a = 1.5;                % Sensor coverage radius (increased by 50%)
@@ -117,8 +117,6 @@ communication_range = node_spacing * 1.5;  % units- we are actually broadcasting
 EKF_VELOCITY_CONVERGENCE_THRESHOLD = 0.006;  % Velocity variance threshold (units²/s²)
 PREDICTION_STABILITY_THRESHOLD = 0.5;        % Time difference threshold (TUs)
 MIN_STABLE_PREDICTIONS = 2;                  % Need at least 2 consecutive stable predictions
-USE_MCMF_ASSIGNMENT = true;                  % Step-1 flag (Step-2 still uses legacy assignment path)
-MCMF_SLOTS_PER_TARGET = MAX_ACTIVE_TRACKERS; % Step-3: slot expansion count per calling target
 
 % Grid dimensions (staggered hex grid, including sensor coverage radius)
 nx = grid_size;   % number of columns
@@ -291,24 +289,206 @@ last_contour_state = 0;
 %% FSM Helper Functions
 
 % Log state transition
+function logStateTransition(sensor_id, old_state, new_state, old_role, new_role, time, reason)
+    if strcmp(old_state, new_state) && strcmp(old_role, new_role)
+        return; % No change
+    end
+end
 
 % Log system state transition
+function logSystemTransition(old_state, new_state, time, reason)
+    if strcmp(old_state, new_state)
+        return; % No change
+    end
+end
 
 % NEW: Calculate when a tracker will lose the target
+function [loss_time, loss_point] = predictTrackerLoss(sensor_id, current_time, sensor_pos, target_pos, target_vel, detection_radius)
+    if norm(target_vel) < 0.01
+        loss_time = inf;
+        loss_point = target_pos;
+        return;
+    end
+    
+    sensor_speed = 0.75;
+    track_direction = target_pos - sensor_pos;
+    current_distance = norm(track_direction);
+    
+    if current_distance > 0
+        track_direction = track_direction / current_distance;
+    else
+        track_direction = [0, 0];
+    end
+    
+    sensor_vel = track_direction * sensor_speed;
+    relative_vel = target_vel - sensor_vel;
+    
+    if norm(relative_vel) < 0.01
+        loss_time = inf;
+        loss_point = target_pos;
+        return;
+    end
+    
+    rel_pos = target_pos - sensor_pos;
+    
+    a = dot(relative_vel, relative_vel);
+    b = 2 * dot(rel_pos, relative_vel);
+    c = dot(rel_pos, rel_pos) - detection_radius^2;
+    
+    discriminant = b^2 - 4*a*c;
+    
+    if discriminant < 0
+        if norm(rel_pos) > detection_radius
+            loss_time = current_time;
+            loss_point = target_pos;
+        else
+            loss_time = inf;
+            loss_point = target_pos;
+        end
+        return;
+    end
+    
+    t1 = (-b + sqrt(discriminant)) / (2*a);
+    t2 = (-b - sqrt(discriminant)) / (2*a);
+    
+    if t1 > 0.1 && t2 > 0.1
+        loss_dt = max(t1, t2);
+    elseif t1 > 0.1
+        loss_dt = t1;
+    elseif t2 > 0.1
+        loss_dt = t2;
+    else
+        loss_dt = 0.1;
+    end
+    
+    loss_time = current_time + loss_dt;
+    loss_point = target_pos + target_vel * loss_dt;
+end
 
 % NEW: Apply safety margin to intercept point
+function safe_intercept_point = applySafetyMargin(sensor_pos, loss_point, safety_margin)
+    direction = loss_point - sensor_pos;
+    safe_distance = norm(direction) * (1 - safety_margin);  % 90% of distance
+    if norm(direction) > 0
+        safe_intercept_point = sensor_pos + (direction / norm(direction)) * safe_distance;
+    else
+        safe_intercept_point = loss_point;
+    end
+    
+    % Ensure output is same shape as sensor_pos (1x2 row vector)
+    if size(safe_intercept_point, 1) > size(safe_intercept_point, 2)
+        safe_intercept_point = safe_intercept_point';
+    end
+end
 
 % NEW: Find sensor farthest from home position
+function farthest_sensor = findFarthestSensorFromHome(sensor_list, current_positions, original_positions)
+    if isempty(sensor_list)
+        farthest_sensor = [];
+        return;
+    end
+    
+    max_distance = 0;
+    farthest_sensor = sensor_list(1);
+    
+    for i = 1:length(sensor_list)
+        sensor_id = sensor_list(i);
+        distance_from_home = norm(current_positions(sensor_id,:) - original_positions(sensor_id,:));
+        if distance_from_home > max_distance
+            max_distance = distance_from_home;
+            farthest_sensor = sensor_id;
+        end
+    end
+end
 
 % Updated helper functions from original code
+function nearby_sensors = findNearbySensors(sensor_id, node_positions, communication_range)
+    sensor_pos = node_positions(sensor_id, :);
+    distances = vecnorm(node_positions - sensor_pos, 2, 2);
+    nearby_sensors = find(distances <= communication_range & distances > 0);
+end
 
+function [shared_target_pos, shared_target_vel, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, sensor_detection_times, current_time, communication_range, target_id)
+    nearby_sensors = findNearbySensors(sensor_id, node_positions, communication_range);
+    valid_estimates = [];
+    weights = [];
+    
+    for i = 1:length(nearby_sensors)
+        nearby_id = nearby_sensors(i);
+        
+        if sensor_detection_times(nearby_id, target_id) > 0 && ~isempty(sensor_ekf_states{nearby_id, target_id})
+            target_estimate = sensor_ekf_states{nearby_id, target_id}(1:2);
+            target_velocity = sensor_ekf_states{nearby_id, target_id}(3:4);
+            
+            time_since_detection = current_time - sensor_detection_times(nearby_id, target_id);
+            distance = norm(node_positions(sensor_id,:) - node_positions(nearby_id,:));
+            
+            weight = exp(-time_since_detection * 0.1) / (1 + distance * 0.1);
+            
+            valid_estimates = [valid_estimates; target_estimate', target_velocity'];
+            weights = [weights; weight];
+        end
+    end
+    
+    if ~isempty(valid_estimates)
+        total_weight = sum(weights);
+        shared_target_pos = sum(valid_estimates(:,1:2) .* weights, 1) / total_weight;
+        shared_target_vel = sum(valid_estimates(:,3:4) .* weights, 1) / total_weight;
+        confidence = min(1.0, total_weight);
+    else
+        shared_target_pos = [];
+        shared_target_vel = [];
+        confidence = 0;
+    end
+end
 
+function a_PNG = calculatePNGAcceleration(robot_pos, robot_vel, target_pos, target_vel, lambda)
+    LOS_vector = target_pos - robot_pos;
+    
+    if norm(LOS_vector) < 0.001
+        a_PNG = [0, 0];
+        return;
+    end
+    
+    rel_velocity = target_vel - robot_vel;
+    
+    LOS_cross_rel_vel = LOS_vector(1) * rel_velocity(2) - LOS_vector(2) * rel_velocity(1);
+    theta_dot_LOS = LOS_cross_rel_vel / (norm(LOS_vector)^2);
+    
+    if norm(robot_vel) > 0.001
+        vel_normalized = robot_vel / norm(robot_vel);
+        normal_direction = [-vel_normalized(2), vel_normalized(1)];
+        a_PNG = lambda * norm(robot_vel) * theta_dot_LOS * normal_direction;
+    else
+        LOS_normalized = LOS_vector / norm(LOS_vector);
+        normal_direction = [-LOS_normalized(2), LOS_normalized(1)];
+        a_PNG = lambda * theta_dot_LOS * normal_direction;
+        % a_PNG = a_PNG * 5.0;
+    end
+end
 
+function contour_points = generate3SigmaContour(center, covariance, confidence, points)
+    chi2val = chi2inv(confidence, 2);
+    [eigVec, eigVal] = eig(covariance);
+    
+    theta = linspace(0, 2*pi, points);
+    xy = [cos(theta); sin(theta)];
+    
+    xy = sqrt(chi2val) * sqrtm(eigVal) * xy;
+    xy = eigVec * xy;
+    
+    x = xy(1,:) + center(1);
+    y = xy(2,:) + center(2);
+    
+    contour_points = [x', y'];
+end
 
 % this function is to check EKF convergence
-
-
-
+function converged = isEKFConverged(P_matrix, threshold)
+    vel_x_variance = P_matrix(3,3);
+    vel_y_variance = P_matrix(4,4);
+    converged = (vel_x_variance < threshold) && (vel_y_variance < threshold);
+end
 
 %% Initialize plot
 fig = figure(2); clf;
@@ -383,7 +563,7 @@ interceptor_events = struct('time', {}, 'target_id', {}, 'predictor_sensor', {},
 for t = 1:simulation_time/dt
     current_time = t * dt;
     node_positions_history(t, :, :) = node_positions;
-    
+
     %% Move multiple targets with different speeds
     for target_id = 1:num_targets
         if current_time >= target_start_time(target_id) && t > 1 && current_waypoint_idx(target_id) < size(waypoints_list{target_id}, 1)
@@ -405,13 +585,13 @@ for t = 1:simulation_time/dt
     
     %% EKF prediction for all targets
     F = [1, 0, dt, 0;
-        0, 1, 0, dt;
-        0, 0, 1, 0;
-        0, 0, 0, 1];
+         0, 1, 0, dt;
+         0, 0, 1, 0;
+         0, 0, 0, 1];
     G = [dt^2/2, 0;
-        0, dt^2/2;
-        dt, 0;
-        0, dt];
+         0, dt^2/2;
+         dt, 0;
+         0, dt];
     Q_k = G * Q * G';
     
     % Predict global EKF states for each target
@@ -451,7 +631,7 @@ for t = 1:simulation_time/dt
                 distance_to_estimate = norm(sensor_pos - estimated_target_pos);
                 
                 % Check if estimated target is within sensor range
-                if distance_to_estimate <= a
+                if distance_to_estimate <= a 
                     target_detected = true;
                 end
                 
@@ -459,7 +639,7 @@ for t = 1:simulation_time/dt
                 % Sensor not tracking this target yet - check for new detection using ground truth
                 distance_to_actual = norm(sensor_pos - target_positions(target_id, :));
                 
-                if distance_to_actual <= a
+                if distance_to_actual <= a 
                     % First-time detection - add measurement noise
                     measurement_noise_std = sqrt(R(1,1));
                     noisy_detection = target_positions(target_id, :) + randn(1,2) * measurement_noise_std;
@@ -508,10 +688,10 @@ for t = 1:simulation_time/dt
         current_active_trackers = active_trackers{target_id};
         
         if ~isempty(current_active_trackers)
-            
+
             % fprintf('[DEBUG t=%.1f] Target %d: Checking %d active trackers, call_triggered=%d\n', ...
             % current_time, target_id, length(current_active_trackers), interceptor_call_triggered(target_id));
-            %
+            % 
             % Reset interceptor call flag only when appropriate
             if interceptor_call_triggered(target_id)
                 % Find current interceptors for this target
@@ -523,7 +703,7 @@ for t = 1:simulation_time/dt
                 if interceptor_call_triggered(target_id) && ~isempty(find(individual_loss_predictions(:, target_id) > 0))
                     earliest_active_predictor = find(individual_loss_predictions(:, target_id) == min(individual_loss_predictions(individual_loss_predictions(:, target_id) > 0, target_id)), 1);
                     if isempty(earliest_active_predictor) || ~ismember(earliest_active_predictor, current_active_trackers) || ...
-                            ~strcmp(sensor_states{earliest_active_predictor}, SENSOR_STATES.TRACKING)
+                       ~strcmp(sensor_states{earliest_active_predictor}, SENSOR_STATES.TRACKING)
                         should_reset = true;
                     end
                 end
@@ -598,7 +778,7 @@ for t = 1:simulation_time/dt
                                 current_time, target_id, tracker_id, loss_time);
                         end
                     end
-                    
+                
                 end
             end
             
@@ -606,10 +786,10 @@ for t = 1:simulation_time/dt
             if earliest_loss_sensor ~= -1 && ~interceptor_call_triggered(target_id) && strcmp(interceptor_process_state{target_id}, 'NONE') && ~sensor_interceptor_call_history(earliest_loss_sensor, target_id)
                 
                 fprintf(fid, '[t=%5.2f][HANDOVER] *** SENSOR %d CALLS INTERCEPTORS FOR TARGET %d *** Loss predicted at %.1f\n', ...
-                    current_time, earliest_loss_sensor, target_id, earliest_loss_time);
+                     current_time, earliest_loss_sensor, target_id, earliest_loss_time);
                 
                 sensor_interceptor_call_history(earliest_loss_sensor, target_id) = true;
-                
+            
                 % Start the multi-step process for this target
                 interceptor_process_state{target_id} = 'PENDING_BROADCAST';
                 interceptor_process_delay(target_id) = 0;  % 2 time steps processing delay
@@ -626,15 +806,15 @@ for t = 1:simulation_time/dt
                 safe_intercept_point = applySafetyMargin(ekf_target_position, loss_point, SAFETY_MARGIN);
                 
                 interceptor_process_data{target_id} = struct('predictor_id', earliest_loss_sensor, ...
-                    'target_id', target_id, ...
-                    'loss_time', earliest_loss_time, ...
-                    'intercept_point', safe_intercept_point, ...
-                    'target_position', ekf_target_position, ...
-                    'loss_point', loss_point);
+                                                           'target_id', target_id, ...
+                                                           'loss_time', earliest_loss_time, ...
+                                                           'intercept_point', safe_intercept_point, ...
+                                                           'target_position', ekf_target_position, ...
+                                                           'loss_point', loss_point);
                 
                 % Store globally for plotting
                 global_interceptor_data{target_id} = interceptor_process_data{target_id};
-                
+
                 % Append structured handover event (selected_sensors filled later)
                 new_event = struct('time', current_time, 'target_id', target_id, ...
                     'predictor_sensor', earliest_loss_sensor, ...
@@ -655,45 +835,303 @@ for t = 1:simulation_time/dt
                     
                 case 'PENDING_BIDDING'
                     interceptor_process_state{target_id} = 'PENDING_SELECTION';
-                    [interceptor_bids(:, target_id), interceptor_valid_bidders{target_id}] = ...
-                        buildInterceptorBidsForTarget(target_id, num_nodes, num_targets, active_trackers, ...
-                        sensor_ekf_states, interceptor_process_data, node_positions, original_positions, ...
-                        sensor_detection_times, current_time, communication_range, wsn_width, wsn_height);
+                    
+                    % Each sensor calculates its own bid for this target
+                    interceptor_bids(:, target_id) = zeros(num_nodes, 1);
+                    interceptor_valid_bidders{target_id} = [];
+                    
+                    safe_intercept_point = interceptor_process_data{target_id}.intercept_point;
+                    
+                    for sensor_id = 1:num_nodes
+                        % NEW: Simple eligibility check - exclude only active trackers
+                        is_active_tracker = false;
+                        for tid = 1:num_targets
+                            if ismember(sensor_id, active_trackers{tid})
+                                is_active_tracker = true;
+                                break;
+                            end
+                        end
+                        
+                        % Can bid if: not an active tracker for any target
+                        if ~is_active_tracker
+                            % Get target velocity estimate from the calling tracker
+                            if ~isempty(sensor_ekf_states{interceptor_process_data{target_id}.predictor_id, target_id})
+                                target_vel_estimate = sensor_ekf_states{interceptor_process_data{target_id}.predictor_id, target_id}(3:4)';
+                            else
+                                target_vel_estimate = [0, 0];
+                            end
+                
+                            % Get shared confidence for this sensor and target
+                            [~, ~, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, ...
+                                sensor_detection_times, current_time, communication_range, target_id);
+                
+                            interceptor_bids(sensor_id, target_id) = calculateEnhancedBid(sensor_id, node_positions(sensor_id,:), ...
+                                original_positions(sensor_id,:), safe_intercept_point, target_vel_estimate, confidence, ...
+                                interceptor_process_data{target_id}.target_position, wsn_width, wsn_height);
+                
+                            interceptor_valid_bidders{target_id} = [interceptor_valid_bidders{target_id}; sensor_id];
+                        end
+                    end
                     
                 case 'PENDING_SELECTION'
-                    allocation_input = buildGlobalAllocationInputs(target_id, num_nodes, num_targets, ...
-                        active_trackers, interceptor_process_state, interceptor_process_data, ...
-                        sensor_ekf_states, node_positions, original_positions, sensor_detection_times, ...
-                        current_time, communication_range, wsn_width, wsn_height, MCMF_SLOTS_PER_TARGET); %#ok<NASGU>
-                    if USE_MCMF_ASSIGNMENT
-                        [sensor_states, sensor_roles, proactive_targets, interceptor_call_triggered, ...
-                            interceptor_call_time, interceptor_process_state, sensors_returning_home] = ...
-                            runLegacyInterceptorSelection(target_id, current_time, num_nodes, num_targets, ...
-                            interceptor_valid_bidders, interceptor_bids, interceptor_process_state, ...
-                            active_trackers, interceptor_process_data, sensor_ekf_states, ...
-                            sensor_detection_times, node_positions, original_positions, ...
-                            communication_range, wsn_width, wsn_height, global_interceptor_data, ...
-                            sensor_states, sensor_roles, proactive_targets, ...
-                            interceptor_call_triggered, interceptor_call_time, ...
-                            sensors_returning_home, SENSOR_STATES, SENSOR_ROLES, fid);
+
+                    fprintf(fid, '[t=%5.2f][BIDDING] Target %d: PENDING_SELECTION with %d valid bidders: [%s]\n', ...
+                        current_time, target_id, length(interceptor_valid_bidders{target_id}), ...
+                        num2str(interceptor_valid_bidders{target_id}'));
+
+                    interceptor_process_state{target_id} = 'NONE';
+                    
+                    % Get current interceptors before selection
+                    current_interceptors = find(cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
+                    
+                    % NEW: Global bidding conflict resolution
+                    % Check if multiple targets are calling interceptors simultaneously
+                    other_targets_calling = [];
+                    for other_tid = 1:num_targets
+                        if other_tid ~= target_id && strcmp(interceptor_process_state{other_tid}, 'PENDING_SELECTION')
+                            other_targets_calling = [other_targets_calling; other_tid];
+                        end
+                    end
+                    
+                    fprintf(fid, '[t=%5.2f][CONFLICT] Target %d: other_targets_calling = [%s]\n', ...
+                       current_time, target_id, num2str(other_targets_calling'));
+
+                    if ~isempty(other_targets_calling)
+                        fprintf(fid, '[t=%5.2f][CONFLICT] ENTERING CONFLICT RESOLUTION PATH\n', current_time);
+                        
+                        % MINIMAX COMBINATORIAL CONFLICT RESOLUTION
+                        all_calling_targets = [target_id; other_targets_calling];
+                        
+                        % Collect all available sensors (excluding active trackers)
+                        available_sensors = [];
+                        for sensor_id = 1:num_nodes
+                            is_active_tracker = false;
+                            for tid = 1:num_targets
+                                if ismember(sensor_id, active_trackers{tid})
+                                    is_active_tracker = true;
+                                    break;
+                                end
+                            end
+                            if ~is_active_tracker
+                                available_sensors = [available_sensors; sensor_id];
+                            end
+                        end
+                        
+                        % Calculate bids for all sensors on all targets
+                        all_target_bids = zeros(length(available_sensors), length(all_calling_targets));
+                        for i = 1:length(available_sensors)
+                            sensor_id = available_sensors(i);
+                            for j = 1:length(all_calling_targets)
+                                calling_tid = all_calling_targets(j);
+                                safe_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
+                                target_vel_estimate = sensor_ekf_states{interceptor_process_data{calling_tid}.predictor_id, calling_tid}(3:4)';
+                                [~, ~, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, ...
+                                    sensor_detection_times, current_time, communication_range, calling_tid);
+                                
+                                all_target_bids(i, j) = calculateEnhancedBid(sensor_id, node_positions(sensor_id,:), ...
+                                    original_positions(sensor_id,:), safe_intercept_point, target_vel_estimate, confidence, ...
+                                    interceptor_process_data{calling_tid}.target_position, wsn_width, wsn_height);
+                            end
+                        end
+                        
+                        % Find best 2-sensor teams for each target
+                        best_teams = cell(length(all_calling_targets), 1);
+                        team_costs = zeros(length(all_calling_targets), 1);
+                        
+                        for j = 1:length(all_calling_targets)
+                            min_cost = inf;
+                            best_pair = [];
+                            
+                            % Check all possible 2-sensor combinations
+                            for i1 = 1:length(available_sensors)-1
+                                for i2 = i1+1:length(available_sensors)
+                                    team_cost = all_target_bids(i1, j) + all_target_bids(i2, j);
+                                    if team_cost < min_cost
+                                        min_cost = team_cost;
+                                        best_pair = [available_sensors(i1), available_sensors(i2)];
+                                    end
+                                end
+                            end
+                            
+                            best_teams{j} = best_pair;
+                            team_costs(j) = min_cost;
+                        end
+                        
+                        % Check for conflicts (same sensors in multiple best teams)
+                        conflicts_exist = false;
+                        all_assigned_sensors = [];
+                        for j = 1:length(all_calling_targets)
+                            all_assigned_sensors = [all_assigned_sensors, best_teams{j}];
+                        end
+                        if length(all_assigned_sensors) ~= length(unique(all_assigned_sensors))
+                            conflicts_exist = true;
+                        end
+                        
+                        if conflicts_exist
+                            fprintf(fid, '[t=%5.2f][CONFLICT] CONFLICT DETECTED - Running minimax optimization\n', current_time);
+                            
+                            % Generate all possible non-overlapping assignments
+                            if length(all_calling_targets) == 2
+                                % Optimized enumeration - limit to top bidders only
+                                num_top_bidders = min(8, length(available_sensors)); % Use only top 8 bidders
+                                [~, sort_idx_t1] = sort(all_target_bids(:,1));
+                                [~, sort_idx_t2] = sort(all_target_bids(:,2));
+                                top_sensors_t1 = available_sensors(sort_idx_t1(1:num_top_bidders));
+                                top_sensors_t2 = available_sensors(sort_idx_t2(1:num_top_bidders));
+                                top_sensors_combined = unique([top_sensors_t1; top_sensors_t2]);
+                                
+                                valid_assignments = [];
+                                assignment_costs = [];
+                                
+                                for i1 = 1:length(top_sensors_combined)-1
+                                    for i2 = i1+1:length(top_sensors_combined)
+                                        for i3 = 1:length(top_sensors_combined)-1
+                                            for i4 = i3+1:length(top_sensors_combined)
+                                                team1 = [top_sensors_combined(i1), top_sensors_combined(i2)];
+                                                team2 = [top_sensors_combined(i3), top_sensors_combined(i4)];
+                                                
+                                                % Check if teams don't overlap
+                                                if isempty(intersect(team1, team2))
+                                                    cost1 = all_target_bids(i1, 1) + all_target_bids(i2, 1);
+                                                    cost2 = all_target_bids(i3, 2) + all_target_bids(i4, 2);
+                                                    max_cost = max(cost1, cost2);
+                                                    
+                                                    valid_assignments = [valid_assignments; {team1, team2}];
+                                                    assignment_costs = [assignment_costs; max_cost];
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                                
+                                % Select assignment with minimum maximum cost (minimax)
+                                [~, best_idx] = min(assignment_costs);
+                                final_assignment = valid_assignments(best_idx, :);
+                                
+                                fprintf(fid, '[t=%5.2f][CONFLICT] MINIMAX SOLUTION: Target %d gets [%s], Target %d gets [%s], worst cost=%.3f\n', ...
+                                    current_time, all_calling_targets(1), num2str(final_assignment{1}), ...
+                                    all_calling_targets(2), num2str(final_assignment{2}), assignment_costs(best_idx));
+                                
+                                % Assign the selected teams
+                                for j = 1:length(all_calling_targets)
+                                    calling_tid = all_calling_targets(j);
+                                    selected_team = final_assignment{j};
+                                    
+                                    for winner = selected_team
+                                        sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
+                                        sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
+                                        proactive_targets{winner} = interceptor_process_data{calling_tid}.intercept_point;
+                                        
+                                        logStateTransition(winner, SENSOR_STATES.IDLE, SENSOR_STATES.INTERCEPTING, ...
+                                            SENSOR_ROLES.NONE, SENSOR_ROLES.INTERCEPTOR_CANDIDATE, current_time, ...
+                                            sprintf('Minimax conflict resolution for target %d', calling_tid));
+                                    end
+                                    
+                                    interceptor_call_triggered(calling_tid) = true;
+                                    interceptor_call_time(calling_tid) = current_time;
+                                end
+                            end
+                        else
+                            % No conflicts - assign best teams directly
+                            for j = 1:length(all_calling_targets)
+                                calling_tid = all_calling_targets(j);
+                                selected_team = best_teams{j};
+                                
+                                for winner = selected_team
+                                    sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
+                                    sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
+                                    proactive_targets{winner} = interceptor_process_data{calling_tid}.intercept_point;
+                                end
+                                
+                                interceptor_call_triggered(calling_tid) = true;
+                            end
+                        end
+                        
+                        % Reset all other calling targets' process states
+                        for other_tid = other_targets_calling'
+                            interceptor_process_state{other_tid} = 'NONE';
+                        end
+                        
                     else
-                        [sensor_states, sensor_roles, proactive_targets, interceptor_call_triggered, ...
-                            interceptor_call_time, interceptor_process_state, sensors_returning_home] = ...
-                            runLegacyInterceptorSelection(target_id, current_time, num_nodes, num_targets, ...
-                            interceptor_valid_bidders, interceptor_bids, interceptor_process_state, ...
-                            active_trackers, interceptor_process_data, sensor_ekf_states, ...
-                            sensor_detection_times, node_positions, original_positions, ...
-                            communication_range, wsn_width, wsn_height, global_interceptor_data, ...
-                            sensor_states, sensor_roles, proactive_targets, ...
-                            interceptor_call_triggered, interceptor_call_time, ...
-                            sensors_returning_home, SENSOR_STATES, SENSOR_ROLES, fid);
+
+                        fprintf(fid, '[t=%5.2f][ASSIGN] ENTERING NORMAL CASE PATH for target %d\n', ...
+                            current_time, target_id);
+                        % NORMAL CASE: Only this target is calling interceptors
+                        if length(interceptor_valid_bidders{target_id}) >= 2
+                            % Sort by bid value (ascending - lowest is best)
+                            [~, sort_idx] = sort(interceptor_bids(interceptor_valid_bidders{target_id}, target_id));
+                            
+                            % Select 2 best bidders
+                            winner1 = interceptor_valid_bidders{target_id}(sort_idx(1));
+                            winner2 = interceptor_valid_bidders{target_id}(sort_idx(2));
+                            
+                            fprintf(fid, '[t=%5.2f][ASSIGN] NORMAL CASE - Target %d: Selected sensors %d and %d as interceptors\n', ...
+                              current_time, target_id, winner1, winner2);
+
+                            % Handle current interceptors that lost the bidding (only if they're not for other targets)
+                            losing_interceptors = setdiff(current_interceptors, [winner1, winner2]);
+                            
+                            for losing_interceptor = losing_interceptors'
+                                % Only remove interceptors that aren't actively working for other targets
+                                is_working_other_target = false;
+                                for tid = 1:num_targets
+                                    if tid ~= target_id && length(losing_interceptor) == 1 && losing_interceptor > 0 && losing_interceptor <= num_nodes && ...
+                                       ~isempty(proactive_targets) && length(proactive_targets) >= losing_interceptor && ...
+                                       ~isempty(proactive_targets{losing_interceptor})
+                                        % Check if this interceptor is heading to another target's intercept point
+                                        for other_tid = 1:num_targets
+                                            if other_tid ~= target_id && ~isempty(global_interceptor_data{other_tid}) && ...
+                                               isfield(global_interceptor_data{other_tid}, 'intercept_point')
+                                                other_intercept = global_interceptor_data{other_tid}.intercept_point;
+                                                if norm(proactive_targets{losing_interceptor} - other_intercept) < 1.0
+                                                    is_working_other_target = true;
+                                                    break;
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                                
+                                if ~is_working_other_target && ~isempty(losing_interceptor) && losing_interceptor > 0 && losing_interceptor <= num_nodes
+                                    sensor_states{losing_interceptor} = SENSOR_STATES.RETURNING_HOME;
+                                    sensor_roles{losing_interceptor} = SENSOR_ROLES.NONE;
+                                    sensors_returning_home = [sensors_returning_home; losing_interceptor];
+                                    proactive_targets{losing_interceptor} = [];
+                                    
+                                    logStateTransition(losing_interceptor, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.RETURNING_HOME, ...
+                                        SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.NONE, current_time, ...
+                                        'Lost rebidding process - returning home');
+                                end
+                            end
+                            
+                            % Assign winners
+                            safe_intercept_point = interceptor_process_data{target_id}.intercept_point;
+                            
+                            for winner = [winner1, winner2]
+                                if ismember(winner, current_interceptors)
+                                    proactive_targets{winner} = safe_intercept_point;
+                                else
+                                    sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
+                                    sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
+                                    proactive_targets{winner} = safe_intercept_point;
+                                    
+                                    logStateTransition(winner, SENSOR_STATES.IDLE, SENSOR_STATES.INTERCEPTING, ...
+                                        SENSOR_ROLES.NONE, SENSOR_ROLES.INTERCEPTOR_CANDIDATE, current_time, ...
+                                        sprintf('Won bidding for target %d', target_id));
+                                end
+                            end
+                            
+                            % Mark interceptor call as triggered
+                            interceptor_call_triggered(target_id) = true;
+                            interceptor_call_time(target_id) = current_time;
+                        end
                     end
             end
         end
-        
+
         fprintf(fid, '[t=%5.2f][STATUS] Target %d: Final status - %d active trackers, call_triggered=%d\n', ...
-            current_time, target_id, length(active_trackers{target_id}), interceptor_call_triggered(target_id));
-        
+                current_time, target_id, length(active_trackers{target_id}), interceptor_call_triggered(target_id));
+    
     end
     
     %% FSM STATE UPDATES
@@ -733,9 +1171,9 @@ for t = 1:simulation_time/dt
                     distance_from_home = norm(node_positions(sensor_id,:) - original_positions(sensor_id,:));
                     
                     if distance_from_home > 0.5 && ...
-                            ~strcmp(sensor_states{sensor_id}, SENSOR_STATES.RETURNING_HOME) && ...
-                            ~strcmp(sensor_states{sensor_id}, SENSOR_STATES.TRACKING) && ...
-                            ~strcmp(sensor_states{sensor_id}, SENSOR_STATES.INTERCEPTING)
+                       ~strcmp(sensor_states{sensor_id}, SENSOR_STATES.RETURNING_HOME) && ...
+                       ~strcmp(sensor_states{sensor_id}, SENSOR_STATES.TRACKING) && ...
+                       ~strcmp(sensor_states{sensor_id}, SENSOR_STATES.INTERCEPTING)
                         
                         % Reset any prediction tracking for all targets
                         for target_id = 1:num_targets
@@ -793,19 +1231,19 @@ for t = 1:simulation_time/dt
             else
                 target_detecting_sensors = [];
             end
-            
+
             detected_sensors{target_id} = unique([detected_sensors{target_id}; target_detecting_sensors]);
         end
         
         % GLOBAL EKF UPDATE per target
         for target_id = 1:num_targets
-            
+
             if ~isempty(detecting_sensors) && size(detecting_sensors, 2) >= 2
                 target_detecting_sensors = detecting_sensors(detecting_sensors(:,2) == target_id, 1);
             else
                 target_detecting_sensors = [];
             end
-            
+
             if ~isempty(target_detecting_sensors)
                 all_measurements = [];
                 
@@ -855,12 +1293,12 @@ for t = 1:simulation_time/dt
                     end
                 end
                 new_detectors = non_interceptor_detectors;
-                
+                  
                 if ~isempty(new_detectors)
                     % For each new detector, do 1-for-1 replacement for this target
                     for new_detector = new_detectors'
                         if length(current_active_trackers) >= MAX_ACTIVE_TRACKERS
-                            
+
                             % CRITICAL FIX: Remove sensor from any other target's tracker list first
                             for other_target_id = 1:num_targets
                                 if other_target_id ~= target_id
@@ -973,7 +1411,7 @@ for t = 1:simulation_time/dt
                                 active_trackers{other_target_id} = active_trackers{other_target_id}(active_trackers{other_target_id} ~= i);
                             end
                         end
-                        
+
                         % Role assignment for this target
                         if length(active_trackers{detected_target_id}) == 0
                             sensor_roles{i} = SENSOR_ROLES.PRIMARY_TRACKER;
@@ -991,7 +1429,7 @@ for t = 1:simulation_time/dt
                             current_time, sprintf('EKF initialized for target %d with role assignment', detected_target_id));
                     end
                 end
-                
+    
             case SENSOR_STATES.TRACKING
                 % Check if this sensor is still detecting any target it's supposed to track
                 still_tracking = false;
@@ -1060,7 +1498,7 @@ for t = 1:simulation_time/dt
                 end
                 
             case SENSOR_STATES.INTERCEPTING
-                
+
                 % some debug lines to see what sensors 3,8,14,20 are doing when are called to intercept
                 if ismember(i, [3, 8, 14, 20])
                     if ~isempty(proactive_targets{i})
@@ -1129,15 +1567,15 @@ for t = 1:simulation_time/dt
                             logStateTransition(i, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.TRACKING, ...
                                 SENSOR_ROLES.INTERCEPTOR_CANDIDATE, sensor_roles{i}, current_time, ...
                                 sprintf('1-for-1 interceptor became tracker - target %d', detected_target_id));
-                            
+    
                             total_successful_intercepts = total_successful_intercepts + 1;
-                            
+    
                             % Reset flag only for the specific target that was successfully intercepted
                             interceptor_call_triggered(detected_target_id) = false;
                             
                             fprintf(fid, '[t=%5.2f][INTERCEPT] Reset interceptor call flag for target %d after successful intercept\n', ...
-                                current_time, detected_target_id);
-                            
+                                 current_time, detected_target_id);
+
                         elseif length(detecting_interceptors_for_target) == 2
                             % 2-for-2 replacement for this target
                             for old_tracker = current_active_trackers'
@@ -1168,9 +1606,9 @@ for t = 1:simulation_time/dt
                                 logStateTransition(i, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.TRACKING, ...
                                     SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.PRIMARY_TRACKER, current_time, ...
                                     sprintf('2-for-2 interceptor became primary tracker - target %d', detected_target_id));
-                                
+    
                                 total_successful_intercepts = total_successful_intercepts + 1;
-                                
+
                                 % Reset flag only for the specific target that was successfully intercepted
                                 interceptor_call_triggered(detected_target_id) = false;
                             end
@@ -1300,13 +1738,13 @@ for t = 1:simulation_time/dt
         end
         % Update state history
         if ~strcmp(prev_state, sensor_states{i}) || ~strcmp(prev_role, sensor_roles{i})
-            sensor_state_history{i} = [sensor_state_history{i};
+            sensor_state_history{i} = [sensor_state_history{i}; 
                 current_time, string(sensor_states{i}), string(sensor_roles{i})];
         end
     end
     
     %% SEARCHING PHASE LOGIC (for all lost targets)
-    if strcmp(system_state, SYSTEM_STATES.SEARCHING) && target_loss_processed
+    if strcmp(system_state, SYSTEM_STATES.SEARCHING) && target_loss_processed 
         if mod(t, update_frequency) == 0
             % Clear old contours
             if ishandle(contour_3sigma_handle)
@@ -1441,7 +1879,7 @@ for t = 1:simulation_time/dt
         end
     end
     
-    %% SENSOR MOVEMENT based on states (modified for dual targets)
+        %% SENSOR MOVEMENT based on states (modified for dual targets)
     for i = 1:num_nodes
         switch sensor_states{i}
             case SENSOR_STATES.TRACKING
@@ -1493,7 +1931,7 @@ for t = 1:simulation_time/dt
                         assigned_target_id = -1;
                         for target_id = 1:num_targets
                             if ~isempty(global_interceptor_data{target_id}) && ...
-                                    isfield(global_interceptor_data{target_id}, 'intercept_point')
+                               isfield(global_interceptor_data{target_id}, 'intercept_point')
                                 intercept_distance = norm(proactive_targets{i} - global_interceptor_data{target_id}.intercept_point);
                                 if intercept_distance < 0.5  % Close match to intercept point
                                     assigned_target_id = target_id;
@@ -1502,11 +1940,11 @@ for t = 1:simulation_time/dt
                             end
                         end
                         
-                        % Always check for target assignment and shared info first
+                       % Always check for target assignment and shared info first
                         assigned_target_id = -1;
                         for target_id = 1:num_targets
                             if ~isempty(global_interceptor_data{target_id}) && ...
-                                    isfield(global_interceptor_data{target_id}, 'intercept_point')
+                               isfield(global_interceptor_data{target_id}, 'intercept_point')
                                 intercept_distance = norm(proactive_targets{i} - global_interceptor_data{target_id}.intercept_point);
                                 if intercept_distance < 0.5
                                     assigned_target_id = target_id;
@@ -1678,7 +2116,7 @@ for t = 1:simulation_time/dt
         current_1sigma = zeros(num_nodes, 1);
         
         if ~isempty(contour_points) && size(contour_points, 1) > 2 && ...
-                ~isempty(inner_contour_points) && ~isempty(middle_contour_points)
+           ~isempty(inner_contour_points) && ~isempty(middle_contour_points)
             
             contour3_x = contour_points(:,1);
             contour3_y = contour_points(:,2);
@@ -1691,7 +2129,7 @@ for t = 1:simulation_time/dt
                 % Check 3-sigma contour
                 is_in_3sigma = inpolygon(node_positions(i,1), node_positions(i,2), contour3_x, contour3_y);
                 if ~is_in_3sigma
-                    distances = sqrt((contour3_x - node_positions(i,1)).^2 + (contour3_y - node_positions(i,2)).^2);
+                distances = sqrt((contour3_x - node_positions(i,1)).^2 + (contour3_y - node_positions(i,2)).^2);
                     min_distance = min(distances);
                     if min_distance <= a
                         is_in_3sigma = true;
@@ -1851,8 +2289,8 @@ for t = 1:simulation_time/dt
     if any(targets_exited)
         for i = 1:num_nodes
             if strcmp(sensor_states{i}, SENSOR_STATES.TRACKING) || ...
-                    strcmp(sensor_states{i}, SENSOR_STATES.INTERCEPTING) || ...
-                    strcmp(sensor_states{i}, SENSOR_STATES.SEARCHING)
+               strcmp(sensor_states{i}, SENSOR_STATES.INTERCEPTING) || ...
+               strcmp(sensor_states{i}, SENSOR_STATES.SEARCHING)
                 
                 % Reset any loss prediction tracking for all targets
                 for target_id = 1:num_targets
@@ -1921,14 +2359,14 @@ for t = 1:simulation_time/dt
     if all_sensors_home || (any(targets_exited) && current_time > simulation_time + 20)
         break;
     end
-    
+
     % Track specific sensor trajectory
     if TRACK_SENSOR_ID <= num_nodes
-        sensor_trajectory_history = [sensor_trajectory_history;
+        sensor_trajectory_history = [sensor_trajectory_history; 
             current_time, node_positions(TRACK_SENSOR_ID, 1), node_positions(TRACK_SENSOR_ID, 2), ...
             double(strcmp(sensor_states{TRACK_SENSOR_ID}, SENSOR_STATES.INTERCEPTING))];
     end
-    
+
 end  % END OF MAIN SIMULATION LOOP
 
 %% Plot Confidence Analysis
@@ -2220,10 +2658,220 @@ for i = 1:num_nodes
 end
 
 %% Plot Multiple Sensor Trajectories for three Targets
+function plotMultipleSensorTrajectories(sensor_list, sensor_trajectories, original_positions, node_positions, target_trajectories, global_interceptor_data)
+    if isempty(sensor_list)
+        sensor_list = [];
+        for i = 1:length(sensor_trajectories)
+            if ~isempty(sensor_trajectories{i}) && size(sensor_trajectories{i}, 1) > 1
+                sensor_list = [sensor_list, i];
+            end
+        end
+    end
+    
+    figure(30); clf;
+    set(gcf, 'Position', [300, 300, 1200, 800]);
+    hold on; grid on; axis equal;
+    xlim([-10, 80]); ylim([-15, 60]);
+    xlabel('X (units)'); ylabel('Y (units)');
+    title(sprintf('three Target Sensor Trajectories: [%s]', num2str(sensor_list)));
+    
+    legend_handles = [];
+    legend_labels = {};
+    
+    % Plot both target trajectories
+    target_colors = {'r', 'g', 'b', 'm', 'c', 'k'};  % Support up to 6 targets
+    for target_id = 1:length(target_trajectories)
+        if ~isempty(target_trajectories{target_id})
+            h1 = plot(target_trajectories{target_id}(:,1), target_trajectories{target_id}(:,2), ...
+                [target_colors{target_id} '-'], 'LineWidth', 2);
+            h2 = plot(target_trajectories{target_id}(1,1), target_trajectories{target_id}(1,2), ...
+                [target_colors{target_id} 'o'], 'MarkerSize', 12, 'MarkerFaceColor', target_colors{target_id});
+            legend_handles = [legend_handles, h1, h2];
+            legend_labels{end+1} = sprintf('Target %d Trajectory', target_id);
+            legend_labels{end+1} = sprintf('Target %d Start', target_id);
+        end
+    end
+    
+    % Plot intercept points for any target with data
+    for target_id = 1:length(global_interceptor_data)
+        if ~isempty(global_interceptor_data{target_id}) && isfield(global_interceptor_data{target_id}, 'loss_point')
+            loss_point = global_interceptor_data{target_id}.loss_point;
+            safe_point = global_interceptor_data{target_id}.intercept_point;
+            
+            h3 = plot(loss_point(1), loss_point(2), 'rx', 'MarkerSize', 15, 'LineWidth', 2);
+            h4 = plot(safe_point(1), safe_point(2), 'g^', 'MarkerSize', 12, 'LineWidth', 2, 'MarkerFaceColor', 'g');
+            h5 = plot([loss_point(1), safe_point(1)], [loss_point(2), safe_point(2)], 'k--', 'LineWidth', 1);
+            
+            legend_handles = [legend_handles, h3, h4, h5];
+            legend_labels{end+1} = sprintf('T%d Loss Point (100%%)', target_id);
+            legend_labels{end+1} = sprintf('T%d Safe Intercept (90%%)', target_id);
+            legend_labels{end+1} = sprintf('T%d Safety Margin', target_id);
+        end
+    end
+    
+    % Plot sensor positions and trajectories
+    if ~isempty(sensor_list)
+        h7 = plot(original_positions(sensor_list,1), original_positions(sensor_list,2), 'ko', 'MarkerSize', 8, 'MarkerFaceColor', 'k');
+        h8 = plot(node_positions(sensor_list,1), node_positions(sensor_list,2), 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r');
+        legend_handles = [legend_handles, h7, h8];
+        legend_labels{end+1} = 'Home Positions';
+        legend_labels{end+1} = 'Final Positions';
+    end
+    
+    % Plot sensor trajectories with unique colors
+    colors = lines(max(sensor_list));
+    
+    for idx = 1:length(sensor_list)
+        i = sensor_list(idx);
+        if ~isempty(sensor_trajectories{i}) && size(sensor_trajectories{i}, 1) > 1
+            traj = sensor_trajectories{i};
+            sensor_color = colors(i,:);
+            
+            h_actual = plot(traj(:,1), traj(:,2), 'Color', sensor_color, 'LineWidth', 1.5);
+            legend_handles = [legend_handles, h_actual];
+            legend_labels{end+1} = sprintf('S%d Path', i);
+            
+            h_start = plot(traj(1,1), traj(1,2), 'o', 'MarkerSize', 8, 'MarkerFaceColor', sensor_color, 'MarkerEdgeColor', 'k');
+            h_end = plot(traj(end,1), traj(end,2), 's', 'MarkerSize', 8, 'MarkerFaceColor', sensor_color, 'MarkerEdgeColor', 'k');
+            
+            legend_handles = [legend_handles, h_start, h_end];
+            legend_labels{end+1} = sprintf('S%d Start', i);
+            legend_labels{end+1} = sprintf('S%d End', i);
+            
+            % Add sensor name on trajectory
+            mid_idx = round(size(traj,1)/2);
+            text(traj(mid_idx,1), traj(mid_idx,2), sprintf('S%d', i), ...
+                'FontSize', 12, 'FontWeight', 'bold', 'Color', sensor_color, ...
+                'BackgroundColor', 'white', 'EdgeColor', sensor_color, ...
+                'HorizontalAlignment', 'center');
+        end
+    end
+    
+    legend(legend_handles, legend_labels, 'Location', 'eastoutside', 'FontSize', 9);
+end
 
 %% Plot Single Sensor Trajectory for three Targets
+function plotSingleSensorTrajectory(sensor_id, sensor_trajectories, original_positions, node_positions, target_trajectories, global_interceptor_data)
+    figure(31); clf;
+    set(gcf, 'Position', [400, 400, 1200, 800]);
+    hold on; grid on; axis equal;
+    xlim([-10, 80]); ylim([-15, 60]);
+    xlabel('X (units)'); ylabel('Y (units)');
+    title(sprintf('three Target Sensor %d Movement Analysis', sensor_id));
+    
+    legend_handles = [];
+    legend_labels = {};
+    
+    % Use consistent color for this sensor
+    colors = lines(25);
+    sensor_color = colors(sensor_id,:);
+    
+    % Plot both target trajectories
+    target_colors = {'r', 'g'};
+    for target_id = 1:length(target_trajectories)
+        if ~isempty(target_trajectories{target_id})
+            h1 = plot(target_trajectories{target_id}(:,1), target_trajectories{target_id}(:,2), ...
+                [target_colors{target_id} '-'], 'LineWidth', 1.5, 'Color', [0.7, 0.7, 0.7]);
+            h2 = plot(target_trajectories{target_id}(1,1), target_trajectories{target_id}(1,2), ...
+                [target_colors{target_id} 'o'], 'MarkerSize', 12, 'MarkerFaceColor', target_colors{target_id});
+            legend_handles = [legend_handles, h1, h2];
+            legend_labels{end+1} = sprintf('Target %d Trajectory', target_id);
+            legend_labels{end+1} = sprintf('Target %d Start', target_id);
+        end
+    end
+    
+    % Plot intercept points for relevant targets
+    for target_id = 1:length(global_interceptor_data)
+        if ~isempty(global_interceptor_data{target_id}) && isfield(global_interceptor_data{target_id}, 'loss_point')
+            loss_point = global_interceptor_data{target_id}.loss_point;
+            safe_point = global_interceptor_data{target_id}.intercept_point;
+            
+            h3 = plot(loss_point(1), loss_point(2), 'rx', 'MarkerSize', 20, 'LineWidth', 2);
+            h4 = plot(safe_point(1), safe_point(2), 'g^', 'MarkerSize', 15, 'LineWidth', 2, 'MarkerFaceColor', 'g');
+            h5 = plot([loss_point(1), safe_point(1)], [loss_point(2), safe_point(2)], 'k--', 'LineWidth', 1.5);
+            
+            legend_handles = [legend_handles, h3, h4, h5];
+            legend_labels{end+1} = sprintf('T%d Loss Point (100%%)', target_id);
+            legend_labels{end+1} = sprintf('T%d Safe Intercept (90%%)', target_id);
+            legend_labels{end+1} = sprintf('T%d Safety Margin', target_id);
+        end
+    end
+    
+    % Plot sensor trajectory analysis
+    if ~isempty(sensor_trajectories{sensor_id}) && size(sensor_trajectories{sensor_id}, 1) > 1
+        traj = sensor_trajectories{sensor_id};
+        
+        % Plot home position
+        h7 = plot(original_positions(sensor_id,1), original_positions(sensor_id,2), 'ko', 'MarkerSize', 15, 'MarkerFaceColor', 'k', 'LineWidth', 2);
+        legend_handles = [legend_handles, h7];
+        legend_labels{end+1} = sprintf('S%d Home Position', sensor_id);
+        
+        % Plot actual trajectory with gradient
+        for j = 1:size(traj,1)-1
+            color_intensity = j / size(traj,1);
+            gradient_color = sensor_color * (0.3 + 0.7*color_intensity);
+            plot(traj(j:j+1,1), traj(j:j+1,2), 'Color', gradient_color, 'LineWidth', 2);
+        end
+        
+        % Add representative line for legend
+        h9 = plot(NaN, NaN, 'Color', sensor_color, 'LineWidth', 2);
+        legend_handles = [legend_handles, h9];
+        legend_labels{end+1} = sprintf('S%d Actual Path', sensor_id);
+        
+        % Mark movement start and end
+        h10 = plot(traj(1,1), traj(1,2), 'o', 'MarkerSize', 12, 'MarkerFaceColor', sensor_color, 'MarkerEdgeColor', 'k', 'LineWidth', 2);
+        h11 = plot(traj(end,1), traj(end,2), 's', 'MarkerSize', 12, 'MarkerFaceColor', sensor_color, 'MarkerEdgeColor', 'k', 'LineWidth', 2);
+        legend_handles = [legend_handles, h10, h11];
+        legend_labels{end+1} = sprintf('S%d Movement Start', sensor_id);
+        legend_labels{end+1} = sprintf('S%d Movement End', sensor_id);
+        
+        % Add sensor name TEXT on trajectory
+        if size(traj,1) > 3
+            mid_idx = round(size(traj,1) / 2);
+            text(traj(mid_idx,1)+ 1.5, traj(mid_idx,2), sprintf('S%d', sensor_id), ...
+                'FontSize', 12, 'FontWeight', 'bold', 'Color', sensor_color, ...
+                'BackgroundColor', 'white', 'EdgeColor', sensor_color, ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');
+        end
+    end
+    
+    legend(legend_handles, legend_labels, 'Location', 'eastoutside', 'FontSize', 10);
+end
 
 %% Enhanced Objective Function Components (unchanged)
+function bid = calculateEnhancedBid(sensor_id, sensor_pos, original_home, intercept_point, target_vel, shared_confidence, target_current_pos, wsn_width, wsn_height)
+    max_network_distance = sqrt(wsn_width^2 + wsn_height^2);
+    
+    P_home = norm(sensor_pos - original_home) / max_network_distance;
+    P_spatial = norm(sensor_pos - intercept_point) / max_network_distance;
+    
+    sensor_velocity = 0.75;
+    time_to_intercept = norm(sensor_pos - intercept_point) / sensor_velocity;
+    
+    target_distance_to_intercept = norm(target_current_pos - intercept_point);
+    target_speed = norm(target_vel);
+    
+    if target_speed > 0.01
+        target_time_to_intercept = target_distance_to_intercept / target_speed;
+        P_temporal = min(1.0, max(0, (time_to_intercept - target_time_to_intercept) / target_time_to_intercept));
+    else
+        P_temporal = 0.0;
+    end
+    
+    P_uncertainty = 1 - shared_confidence;
+    
+    global OPTIMIZATION_WEIGHTS;
+    if ~isempty(OPTIMIZATION_WEIGHTS)
+        w1 = OPTIMIZATION_WEIGHTS(1);
+        w2 = OPTIMIZATION_WEIGHTS(2);  
+        w3 = OPTIMIZATION_WEIGHTS(3);
+        w4 = OPTIMIZATION_WEIGHTS(4);
+    else
+        w1 = 0.4; w2 = 0.3; w3 = 0.2; w4 = 0.1;
+    end
+    
+    bid = w1 * P_home + w2 * P_spatial + w3 * P_temporal + w4 * P_uncertainty;
+end
 
 %% Updated Legend for three Target Simulation
 figure(fig);
@@ -2283,744 +2931,3 @@ save(mat_filename, ...
 
 fprintf('Log  → %s\n', log_filename);
 fprintf('Data → %s\n', mat_filename);
-
-function logStateTransition(sensor_id, old_state, new_state, old_role, new_role, time, reason)
-if strcmp(old_state, new_state) && strcmp(old_role, new_role)
-    return; % No change
-end
-end
-
-function logSystemTransition(old_state, new_state, time, reason)
-if strcmp(old_state, new_state)
-    return; % No change
-end
-end
-
-function [loss_time, loss_point] = predictTrackerLoss(sensor_id, current_time, sensor_pos, target_pos, target_vel, detection_radius)
-if norm(target_vel) < 0.01
-    loss_time = inf;
-    loss_point = target_pos;
-    return;
-end
-
-sensor_speed = 0.75;
-track_direction = target_pos - sensor_pos;
-current_distance = norm(track_direction);
-
-if current_distance > 0
-    track_direction = track_direction / current_distance;
-else
-    track_direction = [0, 0];
-end
-
-sensor_vel = track_direction * sensor_speed;
-relative_vel = target_vel - sensor_vel;
-
-if norm(relative_vel) < 0.01
-    loss_time = inf;
-    loss_point = target_pos;
-    return;
-end
-
-rel_pos = target_pos - sensor_pos;
-
-a = dot(relative_vel, relative_vel);
-b = 2 * dot(rel_pos, relative_vel);
-c = dot(rel_pos, rel_pos) - detection_radius^2;
-
-discriminant = b^2 - 4*a*c;
-
-if discriminant < 0
-    if norm(rel_pos) > detection_radius
-        loss_time = current_time;
-        loss_point = target_pos;
-    else
-        loss_time = inf;
-        loss_point = target_pos;
-    end
-    return;
-end
-
-t1 = (-b + sqrt(discriminant)) / (2*a);
-t2 = (-b - sqrt(discriminant)) / (2*a);
-
-if t1 > 0.1 && t2 > 0.1
-    loss_dt = max(t1, t2);
-elseif t1 > 0.1
-    loss_dt = t1;
-elseif t2 > 0.1
-    loss_dt = t2;
-else
-    loss_dt = 0.1;
-end
-
-loss_time = current_time + loss_dt;
-loss_point = target_pos + target_vel * loss_dt;
-end
-
-function safe_intercept_point = applySafetyMargin(sensor_pos, loss_point, safety_margin)
-direction = loss_point - sensor_pos;
-safe_distance = norm(direction) * (1 - safety_margin);  % 90% of distance
-if norm(direction) > 0
-    safe_intercept_point = sensor_pos + (direction / norm(direction)) * safe_distance;
-else
-    safe_intercept_point = loss_point;
-end
-
-% Ensure output is same shape as sensor_pos (1x2 row vector)
-if size(safe_intercept_point, 1) > size(safe_intercept_point, 2)
-    safe_intercept_point = safe_intercept_point';
-end
-end
-
-function farthest_sensor = findFarthestSensorFromHome(sensor_list, current_positions, original_positions)
-if isempty(sensor_list)
-    farthest_sensor = [];
-    return;
-end
-
-max_distance = 0;
-farthest_sensor = sensor_list(1);
-
-for i = 1:length(sensor_list)
-    sensor_id = sensor_list(i);
-    distance_from_home = norm(current_positions(sensor_id,:) - original_positions(sensor_id,:));
-    if distance_from_home > max_distance
-        max_distance = distance_from_home;
-        farthest_sensor = sensor_id;
-    end
-end
-end
-
-function nearby_sensors = findNearbySensors(sensor_id, node_positions, communication_range)
-sensor_pos = node_positions(sensor_id, :);
-distances = vecnorm(node_positions - sensor_pos, 2, 2);
-nearby_sensors = find(distances <= communication_range & distances > 0);
-end
-
-function [shared_target_pos, shared_target_vel, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, sensor_detection_times, current_time, communication_range, target_id)
-nearby_sensors = findNearbySensors(sensor_id, node_positions, communication_range);
-valid_estimates = [];
-weights = [];
-
-for i = 1:length(nearby_sensors)
-    nearby_id = nearby_sensors(i);
-    
-    if sensor_detection_times(nearby_id, target_id) > 0 && ~isempty(sensor_ekf_states{nearby_id, target_id})
-        target_estimate = sensor_ekf_states{nearby_id, target_id}(1:2);
-        target_velocity = sensor_ekf_states{nearby_id, target_id}(3:4);
-        
-        time_since_detection = current_time - sensor_detection_times(nearby_id, target_id);
-        distance = norm(node_positions(sensor_id,:) - node_positions(nearby_id,:));
-        
-        weight = exp(-time_since_detection * 0.1) / (1 + distance * 0.1);
-        
-        valid_estimates = [valid_estimates; target_estimate', target_velocity'];
-        weights = [weights; weight];
-    end
-end
-
-if ~isempty(valid_estimates)
-    total_weight = sum(weights);
-    shared_target_pos = sum(valid_estimates(:,1:2) .* weights, 1) / total_weight;
-    shared_target_vel = sum(valid_estimates(:,3:4) .* weights, 1) / total_weight;
-    confidence = min(1.0, total_weight);
-else
-    shared_target_pos = [];
-    shared_target_vel = [];
-    confidence = 0;
-end
-end
-
-function a_PNG = calculatePNGAcceleration(robot_pos, robot_vel, target_pos, target_vel, lambda)
-LOS_vector = target_pos - robot_pos;
-
-if norm(LOS_vector) < 0.001
-    a_PNG = [0, 0];
-    return;
-end
-
-rel_velocity = target_vel - robot_vel;
-
-LOS_cross_rel_vel = LOS_vector(1) * rel_velocity(2) - LOS_vector(2) * rel_velocity(1);
-theta_dot_LOS = LOS_cross_rel_vel / (norm(LOS_vector)^2);
-
-if norm(robot_vel) > 0.001
-    vel_normalized = robot_vel / norm(robot_vel);
-    normal_direction = [-vel_normalized(2), vel_normalized(1)];
-    a_PNG = lambda * norm(robot_vel) * theta_dot_LOS * normal_direction;
-else
-    LOS_normalized = LOS_vector / norm(LOS_vector);
-    normal_direction = [-LOS_normalized(2), LOS_normalized(1)];
-    a_PNG = lambda * theta_dot_LOS * normal_direction;
-    % a_PNG = a_PNG * 5.0;
-end
-end
-
-function contour_points = generate3SigmaContour(center, covariance, confidence, points)
-chi2val = chi2inv(confidence, 2);
-[eigVec, eigVal] = eig(covariance);
-
-theta = linspace(0, 2*pi, points);
-xy = [cos(theta); sin(theta)];
-
-xy = sqrt(chi2val) * sqrtm(eigVal) * xy;
-xy = eigVec * xy;
-
-x = xy(1,:) + center(1);
-y = xy(2,:) + center(2);
-
-contour_points = [x', y'];
-end
-
-function converged = isEKFConverged(P_matrix, threshold)
-vel_x_variance = P_matrix(3,3);
-vel_y_variance = P_matrix(4,4);
-converged = (vel_x_variance < threshold) && (vel_y_variance < threshold);
-end
-
-function [interceptor_bid_column, valid_bidders] = buildInterceptorBidsForTarget(target_id, num_nodes, num_targets, ...
-    active_trackers, sensor_ekf_states, interceptor_process_data, node_positions, original_positions, ...
-    sensor_detection_times, current_time, communication_range, wsn_width, wsn_height)
-
-interceptor_bid_column = zeros(num_nodes, 1);
-valid_bidders = [];
-safe_intercept_point = interceptor_process_data{target_id}.intercept_point;
-
-for sensor_id = 1:num_nodes
-    is_active_tracker = false;
-    for tid = 1:num_targets
-        if ismember(sensor_id, active_trackers{tid})
-            is_active_tracker = true;
-            break;
-        end
-    end
-    
-    if ~is_active_tracker
-        if ~isempty(sensor_ekf_states{interceptor_process_data{target_id}.predictor_id, target_id})
-            target_vel_estimate = sensor_ekf_states{interceptor_process_data{target_id}.predictor_id, target_id}(3:4)';
-        else
-            target_vel_estimate = [0, 0];
-        end
-        
-        [~, ~, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, ...
-            sensor_detection_times, current_time, communication_range, target_id);
-        
-        interceptor_bid_column(sensor_id) = calculateEnhancedBid(sensor_id, node_positions(sensor_id,:), ...
-            original_positions(sensor_id,:), safe_intercept_point, target_vel_estimate, confidence, ...
-            interceptor_process_data{target_id}.target_position, wsn_width, wsn_height);
-        
-        valid_bidders = [valid_bidders; sensor_id];
-    end
-end
-end
-
-function [sensor_states, sensor_roles, proactive_targets, interceptor_call_triggered, ...
-    interceptor_call_time, interceptor_process_state, sensors_returning_home] = ...
-    runLegacyInterceptorSelection(target_id, current_time, num_nodes, num_targets, ...
-    interceptor_valid_bidders, interceptor_bids, interceptor_process_state, ...
-    active_trackers, interceptor_process_data, sensor_ekf_states, sensor_detection_times, ...
-    node_positions, original_positions, communication_range, wsn_width, wsn_height, ...
-    global_interceptor_data, sensor_states, sensor_roles, proactive_targets, ...
-    interceptor_call_triggered, interceptor_call_time, sensors_returning_home, ...
-    SENSOR_STATES, SENSOR_ROLES, fid)
-
-fprintf(fid, '[t=%5.2f][BIDDING] Target %d: PENDING_SELECTION with %d valid bidders: [%s]\n', ...
-    current_time, target_id, length(interceptor_valid_bidders{target_id}), ...
-    num2str(interceptor_valid_bidders{target_id}'));
-
-interceptor_process_state{target_id} = 'NONE';
-current_interceptors = find(cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
-
-other_targets_calling = [];
-for other_tid = 1:num_targets
-    if other_tid ~= target_id && strcmp(interceptor_process_state{other_tid}, 'PENDING_SELECTION')
-        other_targets_calling = [other_targets_calling; other_tid];
-    end
-end
-
-fprintf(fid, '[t=%5.2f][CONFLICT] Target %d: other_targets_calling = [%s]\n', ...
-    current_time, target_id, num2str(other_targets_calling'));
-
-if ~isempty(other_targets_calling)
-    fprintf(fid, '[t=%5.2f][CONFLICT] ENTERING CONFLICT RESOLUTION PATH\n', current_time);
-    all_calling_targets = [target_id; other_targets_calling];
-    
-    available_sensors = [];
-    for sensor_id = 1:num_nodes
-        is_active_tracker = false;
-        for tid = 1:num_targets
-            if ismember(sensor_id, active_trackers{tid})
-                is_active_tracker = true;
-                break;
-            end
-        end
-        if ~is_active_tracker
-            available_sensors = [available_sensors; sensor_id];
-        end
-    end
-    
-    all_target_bids = zeros(length(available_sensors), length(all_calling_targets));
-    for i = 1:length(available_sensors)
-        sensor_id = available_sensors(i);
-        for j = 1:length(all_calling_targets)
-            calling_tid = all_calling_targets(j);
-            safe_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
-            target_vel_estimate = sensor_ekf_states{interceptor_process_data{calling_tid}.predictor_id, calling_tid}(3:4)';
-            [~, ~, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, ...
-                sensor_detection_times, current_time, communication_range, calling_tid);
-            all_target_bids(i, j) = calculateEnhancedBid(sensor_id, node_positions(sensor_id,:), ...
-                original_positions(sensor_id,:), safe_intercept_point, target_vel_estimate, confidence, ...
-                interceptor_process_data{calling_tid}.target_position, wsn_width, wsn_height);
-        end
-    end
-    
-    best_teams = cell(length(all_calling_targets), 1);
-    for j = 1:length(all_calling_targets)
-        min_cost = inf;
-        best_pair = [];
-        for i1 = 1:length(available_sensors)-1
-            for i2 = i1+1:length(available_sensors)
-                team_cost = all_target_bids(i1, j) + all_target_bids(i2, j);
-                if team_cost < min_cost
-                    min_cost = team_cost;
-                    best_pair = [available_sensors(i1), available_sensors(i2)];
-                end
-            end
-        end
-        best_teams{j} = best_pair;
-    end
-    
-    conflicts_exist = false;
-    all_assigned_sensors = [];
-    for j = 1:length(all_calling_targets)
-        all_assigned_sensors = [all_assigned_sensors, best_teams{j}];
-    end
-    if length(all_assigned_sensors) ~= length(unique(all_assigned_sensors))
-        conflicts_exist = true;
-    end
-    
-    if conflicts_exist
-        fprintf(fid, '[t=%5.2f][CONFLICT] CONFLICT DETECTED - Running minimax optimization\n', current_time);
-        
-        if length(all_calling_targets) == 2
-            num_top_bidders = min(8, length(available_sensors));
-            [~, sort_idx_t1] = sort(all_target_bids(:,1));
-            [~, sort_idx_t2] = sort(all_target_bids(:,2));
-            top_sensors_t1 = available_sensors(sort_idx_t1(1:num_top_bidders));
-            top_sensors_t2 = available_sensors(sort_idx_t2(1:num_top_bidders));
-            top_sensors_combined = unique([top_sensors_t1; top_sensors_t2]);
-            
-            valid_assignments = [];
-            assignment_costs = [];
-            
-            for i1 = 1:length(top_sensors_combined)-1
-                for i2 = i1+1:length(top_sensors_combined)
-                    for i3 = 1:length(top_sensors_combined)-1
-                        for i4 = i3+1:length(top_sensors_combined)
-                            team1 = [top_sensors_combined(i1), top_sensors_combined(i2)];
-                            team2 = [top_sensors_combined(i3), top_sensors_combined(i4)];
-                            
-                            if isempty(intersect(team1, team2))
-                                cost1 = all_target_bids(i1, 1) + all_target_bids(i2, 1);
-                                cost2 = all_target_bids(i3, 2) + all_target_bids(i4, 2);
-                                max_cost = max(cost1, cost2);
-                                
-                                valid_assignments = [valid_assignments; {team1, team2}];
-                                assignment_costs = [assignment_costs; max_cost];
-                            end
-                        end
-                    end
-                end
-            end
-            
-            [~, best_idx] = min(assignment_costs);
-            final_assignment = valid_assignments(best_idx, :);
-            
-            fprintf(fid, '[t=%5.2f][CONFLICT] MINIMAX SOLUTION: Target %d gets [%s], Target %d gets [%s], worst cost=%.3f\n', ...
-                current_time, all_calling_targets(1), num2str(final_assignment{1}), ...
-                all_calling_targets(2), num2str(final_assignment{2}), assignment_costs(best_idx));
-            
-            for j = 1:length(all_calling_targets)
-                calling_tid = all_calling_targets(j);
-                selected_team = final_assignment{j};
-                
-                for winner = selected_team
-                    sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
-                    sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
-                    proactive_targets{winner} = interceptor_process_data{calling_tid}.intercept_point;
-                    
-                    logStateTransition(winner, SENSOR_STATES.IDLE, SENSOR_STATES.INTERCEPTING, ...
-                        SENSOR_ROLES.NONE, SENSOR_ROLES.INTERCEPTOR_CANDIDATE, current_time, ...
-                        sprintf('Minimax conflict resolution for target %d', calling_tid));
-                end
-                
-                interceptor_call_triggered(calling_tid) = true;
-                interceptor_call_time(calling_tid) = current_time;
-            end
-        end
-    else
-        for j = 1:length(all_calling_targets)
-            calling_tid = all_calling_targets(j);
-            selected_team = best_teams{j};
-            
-            for winner = selected_team
-                sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
-                sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
-                proactive_targets{winner} = interceptor_process_data{calling_tid}.intercept_point;
-            end
-            
-            interceptor_call_triggered(calling_tid) = true;
-        end
-    end
-    
-    for other_tid = other_targets_calling'
-        interceptor_process_state{other_tid} = 'NONE';
-    end
-    
-else
-    fprintf(fid, '[t=%5.2f][ASSIGN] ENTERING NORMAL CASE PATH for target %d\n', ...
-        current_time, target_id);
-    if length(interceptor_valid_bidders{target_id}) >= 2
-        [~, sort_idx] = sort(interceptor_bids(interceptor_valid_bidders{target_id}, target_id));
-        winner1 = interceptor_valid_bidders{target_id}(sort_idx(1));
-        winner2 = interceptor_valid_bidders{target_id}(sort_idx(2));
-        
-        fprintf(fid, '[t=%5.2f][ASSIGN] NORMAL CASE - Target %d: Selected sensors %d and %d as interceptors\n', ...
-            current_time, target_id, winner1, winner2);
-        
-        losing_interceptors = setdiff(current_interceptors, [winner1, winner2]);
-        
-        for losing_interceptor = losing_interceptors'
-            is_working_other_target = false;
-            for tid = 1:num_targets
-                if tid ~= target_id && length(losing_interceptor) == 1 && losing_interceptor > 0 && losing_interceptor <= num_nodes && ...
-                        ~isempty(proactive_targets) && length(proactive_targets) >= losing_interceptor && ...
-                        ~isempty(proactive_targets{losing_interceptor})
-                    for other_tid = 1:num_targets
-                        if other_tid ~= target_id && ~isempty(global_interceptor_data{other_tid}) && ...
-                                isfield(global_interceptor_data{other_tid}, 'intercept_point')
-                            other_intercept = global_interceptor_data{other_tid}.intercept_point;
-                            if norm(proactive_targets{losing_interceptor} - other_intercept) < 1.0
-                                is_working_other_target = true;
-                                break;
-                            end
-                        end
-                    end
-                end
-            end
-            
-            if ~is_working_other_target && ~isempty(losing_interceptor) && losing_interceptor > 0 && losing_interceptor <= num_nodes
-                sensor_states{losing_interceptor} = SENSOR_STATES.RETURNING_HOME;
-                sensor_roles{losing_interceptor} = SENSOR_ROLES.NONE;
-                sensors_returning_home = [sensors_returning_home; losing_interceptor];
-                proactive_targets{losing_interceptor} = [];
-                
-                logStateTransition(losing_interceptor, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.RETURNING_HOME, ...
-                    SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.NONE, current_time, ...
-                    'Lost rebidding process - returning home');
-            end
-        end
-        
-        safe_intercept_point = interceptor_process_data{target_id}.intercept_point;
-        for winner = [winner1, winner2]
-            if ismember(winner, current_interceptors)
-                proactive_targets{winner} = safe_intercept_point;
-            else
-                sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
-                sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
-                proactive_targets{winner} = safe_intercept_point;
-                
-                logStateTransition(winner, SENSOR_STATES.IDLE, SENSOR_STATES.INTERCEPTING, ...
-                    SENSOR_ROLES.NONE, SENSOR_ROLES.INTERCEPTOR_CANDIDATE, current_time, ...
-                    sprintf('Won bidding for target %d', target_id));
-            end
-        end
-        
-        interceptor_call_triggered(target_id) = true;
-        interceptor_call_time(target_id) = current_time;
-    end
-end
-end
-
-function allocation_input = buildGlobalAllocationInputs(target_id, num_nodes, num_targets, ...
-    active_trackers, interceptor_process_state, interceptor_process_data, ...
-    sensor_ekf_states, node_positions, original_positions, sensor_detection_times, ...
-    current_time, communication_range, wsn_width, wsn_height, slots_per_target)
-
-calling_targets = target_id;
-for other_tid = 1:num_targets
-    if other_tid ~= target_id && strcmp(interceptor_process_state{other_tid}, 'PENDING_SELECTION')
-        calling_targets = [calling_targets; other_tid];
-    end
-end
-calling_targets = unique(calling_targets, 'stable');
-
-available_sensors = [];
-for sensor_id = 1:num_nodes
-    is_active_tracker = false;
-    for tid = 1:num_targets
-        if ismember(sensor_id, active_trackers{tid})
-            is_active_tracker = true;
-            break;
-        end
-    end
-    if ~is_active_tracker
-        available_sensors = [available_sensors; sensor_id];
-    end
-end
-
-num_calling_targets = length(calling_targets);
-cost_matrix = zeros(length(available_sensors), num_calling_targets);
-
-for i = 1:length(available_sensors)
-    sensor_id = available_sensors(i);
-    for j = 1:num_calling_targets
-        calling_tid = calling_targets(j);
-        safe_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
-        
-        if ~isempty(sensor_ekf_states{interceptor_process_data{calling_tid}.predictor_id, calling_tid})
-            target_vel_estimate = sensor_ekf_states{interceptor_process_data{calling_tid}.predictor_id, calling_tid}(3:4)';
-        else
-            target_vel_estimate = [0, 0];
-        end
-        
-        [~, ~, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, ...
-            sensor_detection_times, current_time, communication_range, calling_tid);
-        
-        cost_matrix(i, j) = calculateEnhancedBid(sensor_id, node_positions(sensor_id,:), ...
-            original_positions(sensor_id,:), safe_intercept_point, target_vel_estimate, confidence, ...
-            interceptor_process_data{calling_tid}.target_position, wsn_width, wsn_height);
-    end
-end
-
-slot_target_ids = repelem(calling_targets(:)', slots_per_target);
-slot_target_ids = slot_target_ids(:);
-slot_cost_matrix = zeros(length(available_sensors), length(slot_target_ids));
-for s = 1:length(slot_target_ids)
-    target_col = find(calling_targets == slot_target_ids(s), 1, 'first');
-    slot_cost_matrix(:, s) = cost_matrix(:, target_col);
-end
-
-allocation_input = struct( ...
-    'calling_targets', calling_targets, ...
-    'available_sensors', available_sensors, ...
-    'slots_per_target', slots_per_target, ...
-    'slot_target_ids', slot_target_ids, ...
-    'cost_matrix', cost_matrix, ...
-    'slot_cost_matrix', slot_cost_matrix ...
-    );
-end
-
-function plotMultipleSensorTrajectories(sensor_list, sensor_trajectories, original_positions, node_positions, target_trajectories, global_interceptor_data)
-if isempty(sensor_list)
-    sensor_list = [];
-    for i = 1:length(sensor_trajectories)
-        if ~isempty(sensor_trajectories{i}) && size(sensor_trajectories{i}, 1) > 1
-            sensor_list = [sensor_list, i];
-        end
-    end
-end
-
-figure(30); clf;
-set(gcf, 'Position', [300, 300, 1200, 800]);
-hold on; grid on; axis equal;
-xlim([-10, 80]); ylim([-15, 60]);
-xlabel('X (units)'); ylabel('Y (units)');
-title(sprintf('three Target Sensor Trajectories: [%s]', num2str(sensor_list)));
-
-legend_handles = [];
-legend_labels = {};
-
-% Plot both target trajectories
-target_colors = {'r', 'g', 'b', 'm', 'c', 'k'};  % Support up to 6 targets
-for target_id = 1:length(target_trajectories)
-    if ~isempty(target_trajectories{target_id})
-        h1 = plot(target_trajectories{target_id}(:,1), target_trajectories{target_id}(:,2), ...
-            [target_colors{target_id} '-'], 'LineWidth', 2);
-        h2 = plot(target_trajectories{target_id}(1,1), target_trajectories{target_id}(1,2), ...
-            [target_colors{target_id} 'o'], 'MarkerSize', 12, 'MarkerFaceColor', target_colors{target_id});
-        legend_handles = [legend_handles, h1, h2];
-        legend_labels{end+1} = sprintf('Target %d Trajectory', target_id);
-        legend_labels{end+1} = sprintf('Target %d Start', target_id);
-    end
-end
-
-% Plot intercept points for any target with data
-for target_id = 1:length(global_interceptor_data)
-    if ~isempty(global_interceptor_data{target_id}) && isfield(global_interceptor_data{target_id}, 'loss_point')
-        loss_point = global_interceptor_data{target_id}.loss_point;
-        safe_point = global_interceptor_data{target_id}.intercept_point;
-        
-        h3 = plot(loss_point(1), loss_point(2), 'rx', 'MarkerSize', 15, 'LineWidth', 2);
-        h4 = plot(safe_point(1), safe_point(2), 'g^', 'MarkerSize', 12, 'LineWidth', 2, 'MarkerFaceColor', 'g');
-        h5 = plot([loss_point(1), safe_point(1)], [loss_point(2), safe_point(2)], 'k--', 'LineWidth', 1);
-        
-        legend_handles = [legend_handles, h3, h4, h5];
-        legend_labels{end+1} = sprintf('T%d Loss Point (100%%)', target_id);
-        legend_labels{end+1} = sprintf('T%d Safe Intercept (90%%)', target_id);
-        legend_labels{end+1} = sprintf('T%d Safety Margin', target_id);
-    end
-end
-
-% Plot sensor positions and trajectories
-if ~isempty(sensor_list)
-    h7 = plot(original_positions(sensor_list,1), original_positions(sensor_list,2), 'ko', 'MarkerSize', 8, 'MarkerFaceColor', 'k');
-    h8 = plot(node_positions(sensor_list,1), node_positions(sensor_list,2), 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r');
-    legend_handles = [legend_handles, h7, h8];
-    legend_labels{end+1} = 'Home Positions';
-    legend_labels{end+1} = 'Final Positions';
-end
-
-% Plot sensor trajectories with unique colors
-colors = lines(max(sensor_list));
-
-for idx = 1:length(sensor_list)
-    i = sensor_list(idx);
-    if ~isempty(sensor_trajectories{i}) && size(sensor_trajectories{i}, 1) > 1
-        traj = sensor_trajectories{i};
-        sensor_color = colors(i,:);
-        
-        h_actual = plot(traj(:,1), traj(:,2), 'Color', sensor_color, 'LineWidth', 1.5);
-        legend_handles = [legend_handles, h_actual];
-        legend_labels{end+1} = sprintf('S%d Path', i);
-        
-        h_start = plot(traj(1,1), traj(1,2), 'o', 'MarkerSize', 8, 'MarkerFaceColor', sensor_color, 'MarkerEdgeColor', 'k');
-        h_end = plot(traj(end,1), traj(end,2), 's', 'MarkerSize', 8, 'MarkerFaceColor', sensor_color, 'MarkerEdgeColor', 'k');
-        
-        legend_handles = [legend_handles, h_start, h_end];
-        legend_labels{end+1} = sprintf('S%d Start', i);
-        legend_labels{end+1} = sprintf('S%d End', i);
-        
-        % Add sensor name on trajectory
-        mid_idx = round(size(traj,1)/2);
-        text(traj(mid_idx,1), traj(mid_idx,2), sprintf('S%d', i), ...
-            'FontSize', 12, 'FontWeight', 'bold', 'Color', sensor_color, ...
-            'BackgroundColor', 'white', 'EdgeColor', sensor_color, ...
-            'HorizontalAlignment', 'center');
-    end
-end
-
-legend(legend_handles, legend_labels, 'Location', 'eastoutside', 'FontSize', 9);
-end
-
-function plotSingleSensorTrajectory(sensor_id, sensor_trajectories, original_positions, node_positions, target_trajectories, global_interceptor_data)
-figure(31); clf;
-set(gcf, 'Position', [400, 400, 1200, 800]);
-hold on; grid on; axis equal;
-xlim([-10, 80]); ylim([-15, 60]);
-xlabel('X (units)'); ylabel('Y (units)');
-title(sprintf('three Target Sensor %d Movement Analysis', sensor_id));
-
-legend_handles = [];
-legend_labels = {};
-
-% Use consistent color for this sensor
-colors = lines(25);
-sensor_color = colors(sensor_id,:);
-
-% Plot both target trajectories
-target_colors = {'r', 'g'};
-for target_id = 1:length(target_trajectories)
-    if ~isempty(target_trajectories{target_id})
-        h1 = plot(target_trajectories{target_id}(:,1), target_trajectories{target_id}(:,2), ...
-            [target_colors{target_id} '-'], 'LineWidth', 1.5, 'Color', [0.7, 0.7, 0.7]);
-        h2 = plot(target_trajectories{target_id}(1,1), target_trajectories{target_id}(1,2), ...
-            [target_colors{target_id} 'o'], 'MarkerSize', 12, 'MarkerFaceColor', target_colors{target_id});
-        legend_handles = [legend_handles, h1, h2];
-        legend_labels{end+1} = sprintf('Target %d Trajectory', target_id);
-        legend_labels{end+1} = sprintf('Target %d Start', target_id);
-    end
-end
-
-% Plot intercept points for relevant targets
-for target_id = 1:length(global_interceptor_data)
-    if ~isempty(global_interceptor_data{target_id}) && isfield(global_interceptor_data{target_id}, 'loss_point')
-        loss_point = global_interceptor_data{target_id}.loss_point;
-        safe_point = global_interceptor_data{target_id}.intercept_point;
-        
-        h3 = plot(loss_point(1), loss_point(2), 'rx', 'MarkerSize', 20, 'LineWidth', 2);
-        h4 = plot(safe_point(1), safe_point(2), 'g^', 'MarkerSize', 15, 'LineWidth', 2, 'MarkerFaceColor', 'g');
-        h5 = plot([loss_point(1), safe_point(1)], [loss_point(2), safe_point(2)], 'k--', 'LineWidth', 1.5);
-        
-        legend_handles = [legend_handles, h3, h4, h5];
-        legend_labels{end+1} = sprintf('T%d Loss Point (100%%)', target_id);
-        legend_labels{end+1} = sprintf('T%d Safe Intercept (90%%)', target_id);
-        legend_labels{end+1} = sprintf('T%d Safety Margin', target_id);
-    end
-end
-
-% Plot sensor trajectory analysis
-if ~isempty(sensor_trajectories{sensor_id}) && size(sensor_trajectories{sensor_id}, 1) > 1
-    traj = sensor_trajectories{sensor_id};
-    
-    % Plot home position
-    h7 = plot(original_positions(sensor_id,1), original_positions(sensor_id,2), 'ko', 'MarkerSize', 15, 'MarkerFaceColor', 'k', 'LineWidth', 2);
-    legend_handles = [legend_handles, h7];
-    legend_labels{end+1} = sprintf('S%d Home Position', sensor_id);
-    
-    % Plot actual trajectory with gradient
-    for j = 1:size(traj,1)-1
-        color_intensity = j / size(traj,1);
-        gradient_color = sensor_color * (0.3 + 0.7*color_intensity);
-        plot(traj(j:j+1,1), traj(j:j+1,2), 'Color', gradient_color, 'LineWidth', 2);
-    end
-    
-    % Add representative line for legend
-    h9 = plot(NaN, NaN, 'Color', sensor_color, 'LineWidth', 2);
-    legend_handles = [legend_handles, h9];
-    legend_labels{end+1} = sprintf('S%d Actual Path', sensor_id);
-    
-    % Mark movement start and end
-    h10 = plot(traj(1,1), traj(1,2), 'o', 'MarkerSize', 12, 'MarkerFaceColor', sensor_color, 'MarkerEdgeColor', 'k', 'LineWidth', 2);
-    h11 = plot(traj(end,1), traj(end,2), 's', 'MarkerSize', 12, 'MarkerFaceColor', sensor_color, 'MarkerEdgeColor', 'k', 'LineWidth', 2);
-    legend_handles = [legend_handles, h10, h11];
-    legend_labels{end+1} = sprintf('S%d Movement Start', sensor_id);
-    legend_labels{end+1} = sprintf('S%d Movement End', sensor_id);
-    
-    % Add sensor name TEXT on trajectory
-    if size(traj,1) > 3
-        mid_idx = round(size(traj,1) / 2);
-        text(traj(mid_idx,1)+ 1.5, traj(mid_idx,2), sprintf('S%d', sensor_id), ...
-            'FontSize', 12, 'FontWeight', 'bold', 'Color', sensor_color, ...
-            'BackgroundColor', 'white', 'EdgeColor', sensor_color, ...
-            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');
-    end
-end
-
-legend(legend_handles, legend_labels, 'Location', 'eastoutside', 'FontSize', 10);
-end
-
-function bid = calculateEnhancedBid(sensor_id, sensor_pos, original_home, intercept_point, target_vel, shared_confidence, target_current_pos, wsn_width, wsn_height)
-max_network_distance = sqrt(wsn_width^2 + wsn_height^2);
-
-P_home = norm(sensor_pos - original_home) / max_network_distance;
-P_spatial = norm(sensor_pos - intercept_point) / max_network_distance;
-
-sensor_velocity = 0.75;
-time_to_intercept = norm(sensor_pos - intercept_point) / sensor_velocity;
-
-target_distance_to_intercept = norm(target_current_pos - intercept_point);
-target_speed = norm(target_vel);
-
-if target_speed > 0.01
-    target_time_to_intercept = target_distance_to_intercept / target_speed;
-    P_temporal = min(1.0, max(0, (time_to_intercept - target_time_to_intercept) / target_time_to_intercept));
-else
-    P_temporal = 0.0;
-end
-
-P_uncertainty = 1 - shared_confidence;
-
-global OPTIMIZATION_WEIGHTS;
-if ~isempty(OPTIMIZATION_WEIGHTS)
-    w1 = OPTIMIZATION_WEIGHTS(1);
-    w2 = OPTIMIZATION_WEIGHTS(2);
-    w3 = OPTIMIZATION_WEIGHTS(3);
-    w4 = OPTIMIZATION_WEIGHTS(4);
-else
-    w1 = 0.4; w2 = 0.3; w3 = 0.2; w4 = 0.1;
-end
-
-bid = w1 * P_home + w2 * P_spatial + w3 * P_temporal + w4 * P_uncertainty;
-end
