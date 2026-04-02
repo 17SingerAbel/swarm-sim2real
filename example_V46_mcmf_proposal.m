@@ -2754,6 +2754,7 @@ calling_targets = allocation_input.calling_targets;
 available_sensors = allocation_input.available_sensors;
 slot_target_ids = allocation_input.slot_target_ids;
 slot_cost_matrix = allocation_input.slot_cost_matrix;
+slots_per_target = allocation_input.slots_per_target;
 
 fprintf(fid, '[t=%5.2f][MCMF] Target %d enters global allocation with calling targets [%s], sensors=%d, slots=%d\n', ...
     current_time, target_id, num2str(calling_targets'), length(available_sensors), length(slot_target_ids));
@@ -2770,9 +2771,13 @@ assignment = solveInterceptorAssignmentMCMF(available_sensors, slot_target_ids, 
 assigned_sensors = assignment.assigned_sensors;
 assigned_targets = assignment.assigned_targets;
 total_slots_assigned = length(assigned_sensors);
+total_slots_required = length(slot_target_ids);
+total_slots_shortage = max(0, total_slots_required - total_slots_assigned);
 
 fprintf(fid, '[t=%5.2f][MCMF] Assigned %d/%d slots, total cost=%.4f\n', ...
     current_time, total_slots_assigned, length(slot_target_ids), assignment.total_cost);
+fprintf(fid, '[t=%5.2f][MCMF] Capacity summary: required=%d assigned=%d shortage=%d\n', ...
+    current_time, total_slots_required, total_slots_assigned, total_slots_shortage);
 
 for idx = 1:total_slots_assigned
     sensor_id = assigned_sensors(idx);
@@ -2801,6 +2806,9 @@ end
 assigned_sensor_set = unique(assigned_sensors);
 for tid = calling_targets'
     assigned_to_target = assigned_sensors(assigned_targets == tid);
+    required_for_target = slots_per_target;
+    assigned_for_target = length(assigned_to_target);
+    shortage_for_target = max(0, required_for_target - assigned_for_target);
     if ~isempty(assigned_to_target)
         interceptor_call_triggered(tid) = true;
         interceptor_call_time(tid) = current_time;
@@ -2811,6 +2819,8 @@ for tid = calling_targets'
         fprintf(fid, '[t=%5.2f][MCMF] Target %d assigned sensors [] (shortage)\n', ...
             current_time, tid);
     end
+    fprintf(fid, '[t=%5.2f][MCMF][SHORTAGE] Target %d required=%d assigned=%d shortage=%d\n', ...
+        current_time, tid, required_for_target, assigned_for_target, shortage_for_target);
 end
 
 current_interceptors = find(cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
