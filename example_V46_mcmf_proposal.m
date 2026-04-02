@@ -664,15 +664,13 @@ for t = 1:simulation_time/dt
                     allocation_input = buildGlobalAllocationInputs(target_id, num_nodes, num_targets, ...
                         active_trackers, interceptor_process_state, interceptor_process_data, ...
                         sensor_ekf_states, node_positions, original_positions, sensor_detection_times, ...
-                        current_time, communication_range, wsn_width, wsn_height, MCMF_SLOTS_PER_TARGET); %#ok<NASGU>
+                        current_time, communication_range, wsn_width, wsn_height, MCMF_SLOTS_PER_TARGET);
                     if USE_MCMF_ASSIGNMENT
                         [sensor_states, sensor_roles, proactive_targets, interceptor_call_triggered, ...
                             interceptor_call_time, interceptor_process_state, sensors_returning_home] = ...
-                            runLegacyInterceptorSelection(target_id, current_time, num_nodes, num_targets, ...
-                            interceptor_valid_bidders, interceptor_bids, interceptor_process_state, ...
-                            active_trackers, interceptor_process_data, sensor_ekf_states, ...
-                            sensor_detection_times, node_positions, original_positions, ...
-                            communication_range, wsn_width, wsn_height, global_interceptor_data, ...
+                            runMCMFInterceptorSelection(target_id, current_time, num_nodes, num_targets, ...
+                            interceptor_process_state, interceptor_process_data, global_interceptor_data, ...
+                            allocation_input, ...
                             sensor_states, sensor_roles, proactive_targets, ...
                             interceptor_call_triggered, interceptor_call_time, ...
                             sensors_returning_home, SENSOR_STATES, SENSOR_ROLES, fid);
@@ -2741,6 +2739,224 @@ else
         interceptor_call_time(target_id) = current_time;
     end
 end
+end
+
+function [sensor_states, sensor_roles, proactive_targets, interceptor_call_triggered, ...
+    interceptor_call_time, interceptor_process_state, sensors_returning_home] = ...
+    runMCMFInterceptorSelection(target_id, current_time, num_nodes, num_targets, ...
+    interceptor_process_state, interceptor_process_data, global_interceptor_data, ...
+    allocation_input, ...
+    sensor_states, sensor_roles, proactive_targets, ...
+    interceptor_call_triggered, interceptor_call_time, sensors_returning_home, ...
+    SENSOR_STATES, SENSOR_ROLES, fid)
+
+calling_targets = allocation_input.calling_targets;
+available_sensors = allocation_input.available_sensors;
+slot_target_ids = allocation_input.slot_target_ids;
+slot_cost_matrix = allocation_input.slot_cost_matrix;
+
+fprintf(fid, '[t=%5.2f][MCMF] Target %d enters global allocation with calling targets [%s], sensors=%d, slots=%d\n', ...
+    current_time, target_id, num2str(calling_targets'), length(available_sensors), length(slot_target_ids));
+
+interceptor_process_state{target_id} = 'NONE';
+for other_tid = calling_targets'
+    if other_tid ~= target_id
+        interceptor_process_state{other_tid} = 'NONE';
+    end
+end
+
+assignment = solveInterceptorAssignmentMCMF(available_sensors, slot_target_ids, slot_cost_matrix);
+
+assigned_sensors = assignment.assigned_sensors;
+assigned_targets = assignment.assigned_targets;
+total_slots_assigned = length(assigned_sensors);
+
+fprintf(fid, '[t=%5.2f][MCMF] Assigned %d/%d slots, total cost=%.4f\n', ...
+    current_time, total_slots_assigned, length(slot_target_ids), assignment.total_cost);
+
+for idx = 1:total_slots_assigned
+    sensor_id = assigned_sensors(idx);
+    assigned_target_id = assigned_targets(idx);
+    intercept_point = interceptor_process_data{assigned_target_id}.intercept_point;
+
+    if strcmp(sensor_states{sensor_id}, SENSOR_STATES.INTERCEPTING)
+        proactive_targets{sensor_id} = intercept_point;
+    else
+        prev_state = sensor_states{sensor_id};
+        prev_role = sensor_roles{sensor_id};
+        sensor_states{sensor_id} = SENSOR_STATES.INTERCEPTING;
+        sensor_roles{sensor_id} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
+        proactive_targets{sensor_id} = intercept_point;
+
+        if strcmp(prev_state, SENSOR_STATES.RETURNING_HOME)
+            sensors_returning_home = sensors_returning_home(sensors_returning_home ~= sensor_id);
+        end
+
+        logStateTransition(sensor_id, prev_state, SENSOR_STATES.INTERCEPTING, ...
+            prev_role, SENSOR_ROLES.INTERCEPTOR_CANDIDATE, current_time, ...
+            sprintf('MCMF assignment for target %d', assigned_target_id));
+    end
+end
+
+assigned_sensor_set = unique(assigned_sensors);
+for tid = calling_targets'
+    assigned_to_target = assigned_sensors(assigned_targets == tid);
+    if ~isempty(assigned_to_target)
+        interceptor_call_triggered(tid) = true;
+        interceptor_call_time(tid) = current_time;
+        fprintf(fid, '[t=%5.2f][MCMF] Target %d assigned sensors [%s]\n', ...
+            current_time, tid, num2str(assigned_to_target'));
+    else
+        interceptor_call_triggered(tid) = false;
+        fprintf(fid, '[t=%5.2f][MCMF] Target %d assigned sensors [] (shortage)\n', ...
+            current_time, tid);
+    end
+end
+
+current_interceptors = find(cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
+losing_interceptors = setdiff(current_interceptors, assigned_sensor_set);
+
+for losing_interceptor = losing_interceptors'
+    is_working_non_calling_target = false;
+    for other_tid = 1:num_targets
+        if ~ismember(other_tid, calling_targets) && ~isempty(proactive_targets{losing_interceptor}) && ...
+                ~isempty(global_interceptor_data{other_tid}) && isfield(global_interceptor_data{other_tid}, 'intercept_point')
+            other_intercept = global_interceptor_data{other_tid}.intercept_point;
+            if norm(proactive_targets{losing_interceptor} - other_intercept) < 1.0
+                is_working_non_calling_target = true;
+                break;
+            end
+        end
+    end
+
+    if ~is_working_non_calling_target
+        sensor_states{losing_interceptor} = SENSOR_STATES.RETURNING_HOME;
+        sensor_roles{losing_interceptor} = SENSOR_ROLES.NONE;
+        if ~ismember(losing_interceptor, sensors_returning_home)
+            sensors_returning_home = [sensors_returning_home; losing_interceptor];
+        end
+        proactive_targets{losing_interceptor} = [];
+
+        logStateTransition(losing_interceptor, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.RETURNING_HOME, ...
+            SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.NONE, current_time, ...
+            'Removed by MCMF rebidding - returning home');
+    end
+end
+end
+
+function assignment = solveInterceptorAssignmentMCMF(available_sensors, slot_target_ids, slot_cost_matrix)
+
+num_sensors = length(available_sensors);
+num_slots = length(slot_target_ids);
+
+assignment = struct('assigned_sensors', [], 'assigned_targets', [], 'total_cost', 0, 'flow', 0);
+if num_sensors == 0 || num_slots == 0
+    return;
+end
+
+source = 1;
+sensor_start = 2;
+slot_start = sensor_start + num_sensors;
+sink = slot_start + num_slots;
+N = sink;
+
+cap = zeros(N, N);
+cost = inf(N, N);
+
+for i = 1:num_sensors
+    s_node = sensor_start + i - 1;
+    cap(source, s_node) = 1;
+    cost(source, s_node) = 0;
+    cost(s_node, source) = 0;
+end
+
+for i = 1:num_sensors
+    s_node = sensor_start + i - 1;
+    for j = 1:num_slots
+        slot_node = slot_start + j - 1;
+        cap(s_node, slot_node) = 1;
+        cost(s_node, slot_node) = slot_cost_matrix(i, j);
+        cost(slot_node, s_node) = -slot_cost_matrix(i, j);
+    end
+end
+
+for j = 1:num_slots
+    slot_node = slot_start + j - 1;
+    cap(slot_node, sink) = 1;
+    cost(slot_node, sink) = 0;
+    cost(sink, slot_node) = 0;
+end
+
+max_possible_flow = min(num_sensors, num_slots);
+flow = 0;
+total_cost = 0;
+
+while flow < max_possible_flow
+    dist = inf(1, N);
+    prev = zeros(1, N);
+    in_queue = false(1, N);
+    queue = zeros(1, N * N);
+    qh = 1;
+    qt = 1;
+
+    dist(source) = 0;
+    queue(qt) = source;
+    in_queue(source) = true;
+
+    while qh <= qt
+        u = queue(qh);
+        qh = qh + 1;
+        in_queue(u) = false;
+
+        for v = 1:N
+            if cap(u, v) > 0 && isfinite(cost(u, v))
+                nd = dist(u) + cost(u, v);
+                if nd < dist(v)
+                    dist(v) = nd;
+                    prev(v) = u;
+                    if ~in_queue(v)
+                        qt = qt + 1;
+                        queue(qt) = v;
+                        in_queue(v) = true;
+                    end
+                end
+            end
+        end
+    end
+
+    if prev(sink) == 0
+        break;
+    end
+
+    v = sink;
+    while v ~= source
+        u = prev(v);
+        cap(u, v) = cap(u, v) - 1;
+        cap(v, u) = cap(v, u) + 1;
+        total_cost = total_cost + cost(u, v);
+        v = u;
+    end
+    flow = flow + 1;
+end
+
+assigned_sensors = [];
+assigned_targets = [];
+
+for i = 1:num_sensors
+    s_node = sensor_start + i - 1;
+    for j = 1:num_slots
+        slot_node = slot_start + j - 1;
+        if cap(slot_node, s_node) > 0
+            assigned_sensors = [assigned_sensors; available_sensors(i)];
+            assigned_targets = [assigned_targets; slot_target_ids(j)];
+        end
+    end
+end
+
+assignment.assigned_sensors = assigned_sensors;
+assignment.assigned_targets = assigned_targets;
+assignment.total_cost = total_cost;
+assignment.flow = flow;
 end
 
 function allocation_input = buildGlobalAllocationInputs(target_id, num_nodes, num_targets, ...
