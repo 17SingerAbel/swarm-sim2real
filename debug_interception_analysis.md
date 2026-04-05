@@ -207,7 +207,58 @@ for target trajectory changes.
 
 ---
 
-## 5. Summary Table
+---
+
+## 5. Optimization Goal: Multi-Target Conflict Resolution
+
+### Goal
+When N ∈ {2, 3} targets simultaneously enter `PENDING_SELECTION`, find the globally (or near-optimally) best disjoint assignment of 2-sensor teams to targets that minimises the **worst team's bid cost** (minimax).
+
+### Bug 2 Root Cause (confirmed via 10-line analysis)
+The 10 lines (1532-1542) scan live `sensor_states` to count how many interceptors are detecting the same target. Because the outer loop processes sensors sequentially, when interceptor A is processed first it transitions to `TRACKING`. When interceptor B is processed next, A is no longer `INTERCEPTING`, so `detecting_interceptors_for_target` has length 1 — B enters the **1-for-1 path**, which evicts A (the farthest tracker) and adds B. Result: A is sent home, the target has only 1 tracker. Fix: snapshot `sensor_states` before the loop, use the snapshot for detection counting.
+
+### Mathematical Formulation — Minimax Pair Assignment Problem
+
+**Input:**
+- Sensor pool S = {s₁…sₖ}, k ≤ ~20 (non-tracker sensors)
+- Conflicting targets T = {t₁…tₙ}, N ≤ 3
+- Bid matrix B ∈ ℝ^{k×N}: B[i,j] = bid cost of sᵢ for target tⱼ (lower = better)
+- Each target requires exactly 2 sensors; each sensor used by at most 1 target
+
+**Objective:**
+```
+min over disjoint pairs P₁,…,Pₙ ⊆ S, |Pⱼ|=2
+    max_{j=1..N}  Σ_{s∈Pⱼ} B[s, j]
+```
+
+This is the **Minimax Team Assignment Problem** — a bottleneck variant of quadratic assignment.
+Graph view: each valid 2-sensor team for target j is a hyperedge; find N disjoint hyperedges minimising max weight.
+
+### Three Algorithm Options
+
+| | Algorithm | Optimality | Complexity (top-8 filter) |
+|---|---|---|---|
+| **A** | Extended Exhaustive Enumeration | Optimal within top-k | O(k^{2N}) → ~47K ops for N=3 |
+| **B** | ILP via `intlinprog` | Globally optimal | <1 ms for k≤25, N≤3 |
+| **C** | Permutation Greedy (all N! orderings) | Sub-optimal, near-optimal | O(N!·k²) → ~1,800 ops for N=3 |
+
+**Algorithm A** — Extend nested loops to N=3; same top-8 filter. Natural extension of existing code.
+
+**Algorithm B** — ILP:
+```
+min θ  s.t.
+  Σ_i x_{ij} = 2          ∀j   (2 sensors per target)
+  Σ_j x_{ij} ≤ 1          ∀i   (each sensor used once)
+  Σ_i B[i,j]·x_{ij} ≤ θ  ∀j   (team cost ≤ max)
+  x_{ij} ∈ {0,1}
+```
+Solved by MATLAB `intlinprog`. Globally optimal, no enumeration needed.
+
+**Algorithm C** — For each of N! target orderings, greedily assign cheapest available team per target. Return ordering with minimum max cost. Very fast, usually near-optimal.
+
+---
+
+## 6. Summary Table
 
 | # | Issue | Lines | Severity | Type |
 |---|---|---|---|---|

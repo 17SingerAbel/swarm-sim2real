@@ -9,7 +9,9 @@
       "Bash(cat:*)",
       "Bash(/c/Users/abel/AppData/Local/Programs/Python/Python313/python:*)",
       "Bash(echo matlab not found in PATH:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)"
     ]
   }
 }
