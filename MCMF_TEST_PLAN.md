@@ -307,3 +307,7 @@ matlab.exe -batch "cd('C:/Users/abel/Desktop/MIE8888/mie8888'); issues = checkco
 - Do not modify target trajectories or EKF convergence logic for this test layer.
 - Do not add a full-simulation debug injection flag yet.
 - Add full simulation injection only after the adapter tests pass.
+
+For the full simulation integration strategy, see `MCMF_SIMULATION_INTEGRATION_PLAN.md`.
+
+For the Stage 3 short controlled simulation report case, see `MCMF_STAGE3_TEST_PLAN.md`.
