@@ -6,7 +6,7 @@ Sensors autonomously coordinate via a Finite State Machine (FSM) to track up to 
 simultaneously, proactively handing off tracking to new sensors before losing contact.
 
 ## Primary File
-- `example_V45_V38_b.m` — single monolithic MATLAB script (~2878 lines)
+- `example_V45_V38_b_Yeqi.m` — single monolithic MATLAB script (~2878 lines)
 
 ## Domain Concepts
 - **WSN**: Wireless Sensor Network — 5×5 staggered hex grid of mobile sensor nodes
