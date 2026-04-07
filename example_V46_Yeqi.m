@@ -409,90 +409,6 @@ function farthest_sensor = findFarthestSensorFromHome(sensor_list, current_posit
     end
 end
 
-% Updated helper functions from original code
-function nearby_sensors = findNearbySensors(sensor_id, node_positions, communication_range)
-    sensor_pos = node_positions(sensor_id, :);
-    distances = vecnorm(node_positions - sensor_pos, 2, 2);
-    nearby_sensors = find(distances <= communication_range & distances > 0);
-end
-
-function [shared_target_pos, shared_target_vel, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, sensor_detection_times, current_time, communication_range, target_id)
-    nearby_sensors = findNearbySensors(sensor_id, node_positions, communication_range);
-    valid_estimates = [];
-    weights = [];
-    
-    for i = 1:length(nearby_sensors)
-        nearby_id = nearby_sensors(i);
-        
-        if sensor_detection_times(nearby_id, target_id) > 0 && ~isempty(sensor_ekf_states{nearby_id, target_id})
-            target_estimate = sensor_ekf_states{nearby_id, target_id}(1:2);
-            target_velocity = sensor_ekf_states{nearby_id, target_id}(3:4);
-            
-            time_since_detection = current_time - sensor_detection_times(nearby_id, target_id);
-            distance = norm(node_positions(sensor_id,:) - node_positions(nearby_id,:));
-            
-            weight = exp(-time_since_detection * 0.1) / (1 + distance * 0.1);
-            
-            valid_estimates = [valid_estimates; target_estimate', target_velocity'];
-            weights = [weights; weight];
-        end
-    end
-    
-    if ~isempty(valid_estimates)
-        total_weight = sum(weights);
-        shared_target_pos = sum(valid_estimates(:,1:2) .* weights, 1) / total_weight;
-        shared_target_vel = sum(valid_estimates(:,3:4) .* weights, 1) / total_weight;
-        confidence = min(1.0, total_weight);
-    else
-        shared_target_pos = [];
-        shared_target_vel = [];
-        confidence = 0;
-    end
-end
-
-function [available_sensors, assignment_cost_matrix] = buildAssignmentCostMatrixForCallingTargets(calling_targets, num_nodes, num_targets, active_trackers, node_positions, original_positions, interceptor_process_data, sensor_ekf_states, sensor_detection_times, current_time, communication_range, wsn_width, wsn_height)
-    available_sensors = [];
-
-    for sensor_id = 1:num_nodes
-        is_active_tracker = false;
-        for tid = 1:num_targets
-            if ismember(sensor_id, active_trackers{tid})
-                is_active_tracker = true;
-                break;
-            end
-        end
-
-        if ~is_active_tracker
-            available_sensors = [available_sensors; sensor_id]; %#ok<AGROW>
-        end
-    end
-
-    assignment_cost_matrix = inf(length(available_sensors), length(calling_targets));
-
-    for i = 1:length(available_sensors)
-        sensor_id = available_sensors(i);
-
-        for j = 1:length(calling_targets)
-            calling_tid = calling_targets(j);
-            safe_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
-            predictor_id = interceptor_process_data{calling_tid}.predictor_id;
-
-            if predictor_id > 0 && ~isempty(sensor_ekf_states{predictor_id, calling_tid})
-                target_vel_estimate = sensor_ekf_states{predictor_id, calling_tid}(3:4)';
-            else
-                target_vel_estimate = [0, 0];
-            end
-
-            [~, ~, confidence] = getSharedTargetInfo(sensor_id, node_positions, sensor_ekf_states, ...
-                sensor_detection_times, current_time, communication_range, calling_tid);
-
-            assignment_cost_matrix(i, j) = calculateEnhancedBid(sensor_id, node_positions(sensor_id,:), ...
-                original_positions(sensor_id,:), safe_intercept_point, target_vel_estimate, confidence, ...
-                interceptor_process_data{calling_tid}.target_position, wsn_width, wsn_height);
-        end
-    end
-end
-
 function a_PNG = calculatePNGAcceleration(robot_pos, robot_vel, target_pos, target_vel, lambda)
     LOS_vector = target_pos - robot_pos;
     
@@ -2772,41 +2688,6 @@ function plotSingleSensorTrajectory(sensor_id, sensor_trajectories, original_pos
     end
     
     legend(legend_handles, legend_labels, 'Location', 'eastoutside', 'FontSize', 10);
-end
-
-%% Enhanced Objective Function Components (unchanged)
-function bid = calculateEnhancedBid(sensor_id, sensor_pos, original_home, intercept_point, target_vel, shared_confidence, target_current_pos, wsn_width, wsn_height)
-    max_network_distance = sqrt(wsn_width^2 + wsn_height^2);
-    
-    P_home = norm(sensor_pos - original_home) / max_network_distance;
-    P_spatial = norm(sensor_pos - intercept_point) / max_network_distance;
-    
-    sensor_velocity = 0.75;
-    time_to_intercept = norm(sensor_pos - intercept_point) / sensor_velocity;
-    
-    target_distance_to_intercept = norm(target_current_pos - intercept_point);
-    target_speed = norm(target_vel);
-    
-    if target_speed > 0.01
-        target_time_to_intercept = target_distance_to_intercept / target_speed;
-        P_temporal = min(1.0, max(0, (time_to_intercept - target_time_to_intercept) / target_time_to_intercept));
-    else
-        P_temporal = 0.0;
-    end
-    
-    P_uncertainty = 1 - shared_confidence;
-    
-    global OPTIMIZATION_WEIGHTS;
-    if ~isempty(OPTIMIZATION_WEIGHTS)
-        w1 = OPTIMIZATION_WEIGHTS(1);
-        w2 = OPTIMIZATION_WEIGHTS(2);  
-        w3 = OPTIMIZATION_WEIGHTS(3);
-        w4 = OPTIMIZATION_WEIGHTS(4);
-    else
-        w1 = 0.4; w2 = 0.3; w3 = 0.2; w4 = 0.1;
-    end
-    
-    bid = w1 * P_home + w2 * P_spatial + w3 * P_temporal + w4 * P_uncertainty;
 end
 
 %% Updated Legend for three Target Simulation
