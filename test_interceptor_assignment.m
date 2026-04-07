@@ -55,3 +55,17 @@ cost_matrix = [0.6; 0.2; 0.4];
 verifyEqual(testCase, sort(assignments{1}(:))', [9 10]);
 verifyEqual(testCase, diagnostics.algorithm, 'LEGACY');
 end
+
+function testLegacyMultiTargetExactTeamSizeRemainsAvailable(testCase)
+calling_targets = [1; 2];
+candidates = [4; 5];
+cost_matrix = [0.2552, 0.1008; ...
+               0.1117, 0.1836];
+
+[assignments, diagnostics] = solveInterceptorAssignments(calling_targets, candidates, cost_matrix, 2, false);
+
+verifyEqual(testCase, sort(assignments{1}(:))', [4 5]);
+verifyEqual(testCase, assignments{2}, []);
+verifyEqual(testCase, diagnostics.assigned_slots_total, 2);
+verifyEqual(testCase, diagnostics.algorithm, 'LEGACY');
+end

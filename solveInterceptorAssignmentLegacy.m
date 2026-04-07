@@ -68,7 +68,10 @@ for target_idx = 1:num_targets
     end
 
     combos = nchoosek(1:num_candidates, team_size);
-    combo_costs = sum(cost_matrix(combos, target_idx), 2);
+    combo_costs = zeros(size(combos, 1), 1);
+    for combo_idx = 1:size(combos, 1)
+        combo_costs(combo_idx) = sum(cost_matrix(combos(combo_idx, :), target_idx));
+    end
     [team_costs(target_idx), best_idx] = min(combo_costs);
     best_teams{target_idx} = candidates(combos(best_idx, :))';
 end
@@ -76,7 +79,7 @@ end
 all_assigned = [best_teams{:}];
 conflicts_exist = numel(unique(all_assigned)) ~= numel(all_assigned);
 
-if conflicts_exist && num_targets == 2 && slots_per_target == 2 && num_candidates >= 2
+if conflicts_exist && num_targets == 2 && slots_per_target == 2 && num_candidates >= num_targets * slots_per_target
     [assignments, assigned_slots_per_target, assignment_costs_per_target] = ...
         solveTwoTargetMinimaxLegacy(candidates, cost_matrix);
     return;

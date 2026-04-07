@@ -1,4 +1,4 @@
-function bid = calculateEnhancedBid(sensor_id, sensor_pos, original_home, intercept_point, target_vel, shared_confidence, target_current_pos, wsn_width, wsn_height)
+function bid = calculateEnhancedBid(~, sensor_pos, original_home, intercept_point, target_vel, shared_confidence, target_current_pos, wsn_width, wsn_height)
 max_network_distance = sqrt(wsn_width^2 + wsn_height^2);
 
 P_home = norm(sensor_pos - original_home) / max_network_distance;
