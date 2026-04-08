@@ -11,10 +11,10 @@ Stage 3:
 short controlled run + one forced simultaneous PENDING_SELECTION event
 
 Stage 4:
-full 82 s simulation run + one forced simultaneous PENDING_SELECTION event
+full 75 s simulation run + one forced simultaneous PENDING_SELECTION event
 ```
 
-Stage 4 is still not a fully natural run, because it still uses injection to force simultaneous target 1 and target 2 selection. The difference is that after the injected assignment, the simulation continues for the rest of the full 82 s horizon. This tests whether the MCMF assignment remains compatible with the longer FSM, movement, tracking, returning-home, handover, logging, and MAT-output behavior.
+Stage 4 is still not a fully natural run, because it still uses injection to force simultaneous target 1 and target 2 selection. The difference is that after the injected assignment, the simulation continues for the rest of the full 75 s horizon. This tests whether the MCMF assignment remains compatible with the longer FSM, movement, tracking, returning-home, handover, logging, and MAT-output behavior.
 
 ## Why Stage 4 Is Different From Stage 3
 
@@ -27,7 +27,7 @@ Can the real V46-derived loop consume a controlled simultaneous MCMF assignment 
 Stage 4 answers:
 
 ```text
-Can the full 82 s simulation remain stable after a controlled simultaneous MCMF assignment?
+Can the full 75 s simulation remain stable after a controlled simultaneous MCMF assignment?
 ```
 
 The difference is the evidence target:
@@ -36,8 +36,8 @@ The difference is the evidence target:
 |---|---:|---|---|
 | Stage 1 | No simulation loop | Mock inputs | Solver and adapter correctness |
 | Stage 3 | Short run, e.g. 8 s or 30 s | Injected simultaneous selection | Real-loop assignment and immediate post-assignment behavior |
-| Stage 4 | Full 82 s run | Injected simultaneous selection | Long-run stability after injected assignment |
-| Stage 5 | Full 82 s run | Natural EKF/loss prediction trigger | Final no-injection behavior |
+| Stage 4 | Full 75 s run | Injected simultaneous selection | Long-run stability after injected assignment |
+| Stage 5 | Full 75 s run | Natural EKF/loss prediction trigger | Final no-injection behavior |
 
 Stage 4 is stronger than Stage 3 because it allows later simulation logic to interact with the selected interceptors over a much longer period.
 
@@ -121,7 +121,7 @@ The expected Stage 4 behavior is:
 7. Selected sensors receive INTERCEPTING state and INTERCEPTOR_CANDIDATE role.
 8. Selected sensors receive non-empty proactive_targets.
 9. The simulation continues after the injected event.
-10. The run reaches the full 82 s horizon or the normal simulation stopping condition.
+10. The run reaches the full 75 s horizon or the normal simulation stopping condition.
 11. MAT/log outputs are saved.
 ```
 
@@ -141,7 +141,7 @@ assigned sensors do not intersect [1 2 3 4].
 selected sensors were INTERCEPTING immediately after assignment.
 selected sensors had INTERCEPTOR_CANDIDATE role immediately after assignment.
 selected sensors had non-empty proactive_targets immediately after assignment.
-current_time is close to 82 s or the run ended by a documented normal stop condition.
+current_time is close to 75 s or the run ended by a documented normal stop condition.
 at least one selected sensor moved after assignment.
 MAT output exists.
 log output exists.
@@ -189,7 +189,7 @@ Stage 4 would prove:
 
 ```text
 The injected MCMF assignment can survive a full simulation run.
-The full 82 s loop can continue after controlled simultaneous target assignment.
+The full 75 s loop can continue after controlled simultaneous target assignment.
 The longer-run FSM, movement, logging, and MAT saving are compatible with the MCMF integration.
 ```
 
@@ -207,7 +207,7 @@ Every future handover event is optimal or stable.
 Those claims should wait for Stage 5:
 
 ```text
-Full 82 s simulation with injection disabled and USE_MCMF_ASSIGNMENT = true.
+Full 75 s simulation with injection disabled and USE_MCMF_ASSIGNMENT = true.
 ```
 
 ## Implementation Recommendation
@@ -219,7 +219,7 @@ Implemented approach:
 ```text
 1. Created run_mcmf_stage4_full_injected_simulation.m.
 2. Created example_v46_stage4_Yeqi.m.
-3. Set simulation time to 82 s.
+3. Set simulation time to 75 s.
 4. Kept injection time at 15 s for the first Stage 4 run.
 5. Kept MCMF enabled for the first Stage 4 verified run.
 6. Preserved automatic legacy comparison on the same event cost matrix.

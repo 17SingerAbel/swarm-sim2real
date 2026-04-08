@@ -210,7 +210,7 @@ The setup is:
 | Cost function changed? | No |
 | `P_home` / home distance disabled? | No |
 | Target trajectories changed? | No |
-| Normal 82 s run affected by default? | No |
+| Normal 75 s run affected by default? | No |
 | Stage 3 output prefix | `logs/mcmf_stage3_*` |
 
 The reason for this setup is to isolate the next integration question:
@@ -502,7 +502,7 @@ Stage 3 proves:
 
 ## What This Test Does Not Prove Yet
 
-Stage 3 does not prove the full natural 82 s behavior. It intentionally bypasses the natural EKF/loss-prediction timing only for the injected event.
+Stage 3 does not prove the full natural 75 s behavior. It intentionally bypasses the natural EKF/loss-prediction timing only for the injected event.
 
 Still unproven until later stages:
 
@@ -510,8 +510,8 @@ Still unproven until later stages:
 Natural EKF convergence timing.
 Natural prediction stability timing.
 Naturally occurring simultaneous PENDING_SELECTION.
-Full 82 s behavior after an injected event.
+Full 75 s behavior after an injected event.
 Full no-injection natural behavior.
 ```
 
-The next recommended step is Stage 4: run the full 82 s simulation with the same default-off injection mechanism, then verify that MCMF assignment remains stable over the complete run.
+The next recommended step is Stage 4: run the full 75 s simulation with the same default-off injection mechanism, then verify that MCMF assignment remains stable over the complete run.

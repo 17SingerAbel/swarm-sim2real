@@ -50,7 +50,7 @@ simultaneously, proactively handing off tracking to new sensors before losing co
 | `communication_range` | node_spacing*1.5 = 18 units | Peer comm range (broadcast used in practice) |
 | `sensor_velocity` | 0.75 units/s | Mobile node speed |
 | `dt` | 0.1 s | Simulation time step |
-| `simulation_time` | 82 s | Total simulation time |
+| `simulation_time` | 75 s | Total simulation time |
 | `Q` | 0.01 * eye(2) | EKF process noise |
 | `R` | 0.0025 * eye(2) | EKF measurement noise |
 | `grid_size` | 5×5 = 25 nodes | Network size |
@@ -86,7 +86,7 @@ Open MATLAB and run:
 ```matlab
 example_V45_V38_b
 ```
-Simulation runs for 82 s with real-time Figure 2 animation. Console prints debug/event log.
+Simulation runs for 75 s with real-time Figure 2 animation. Console prints debug/event log.
 
 ## Research Context
 MIE8888 research project on proactive handover in mobile WSN. Key innovations:

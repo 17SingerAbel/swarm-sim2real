@@ -4,7 +4,7 @@
 
 V46 upgrades the interceptor selection logic from a mostly local/legacy bidding process to a testable global assignment workflow based on min-cost max-flow (MCMF).
 
-The main goal is not only to change the assignment algorithm, but also to make the assignment layer independently testable before relying on the full 82 s simulation. This reduces the risk of debugging EKF timing, loss prediction, sensor motion, and assignment logic all at the same time.
+The main goal is not only to change the assignment algorithm, but also to make the assignment layer independently testable before relying on the full simulation. This reduces the risk of debugging EKF timing, loss prediction, sensor motion, and assignment logic all at the same time.
 
 ## Implemented
 
@@ -58,7 +58,7 @@ The main goal is not only to change the assignment algorithm, but also to make t
 ### Stage 4 Full Injected Simulation
 
 - Added `example_v46_stage4_Yeqi.m` as the dedicated Stage 4 simulation script, keeping Stage 3 and Stage 4 injection logic separate.
-- Added `run_mcmf_stage4_full_injected_simulation.m` for full 82 s injected simulation runs.
+- Added `run_mcmf_stage4_full_injected_simulation.m` for full injected simulation runs.
 - Stage 4 uses an `AUGMENT_OR_FALLBACK` injection policy:
   - augment an existing valid natural `PENDING_SELECTION` target when available;
   - otherwise use fallback controlled target 1/2 injection.
@@ -321,13 +321,13 @@ Stage 3 proves that the real V46 loop can consume the MCMF result, mark the sele
 
 ## Known Gap
 
-- Full 82 s simulation loop has not been validated end-to-end yet.
+- Full simulation loop has not been validated end-to-end yet.
 - The current tests do not yet validate EKF convergence timing, loss prediction stability, actual `interceptor_process_state` timing, physical interceptor movement, or handover completion.
 - This is expected: the current layer intentionally isolates assignment correctness before testing the complete dynamic system.
 - Stage 3 uses injection to bypass natural simultaneous-trigger timing. It is real-loop evidence, but not yet natural full-simulation evidence.
 
 ## Recommended Next Step
 
-Proceed to Stage 4: run the full 82 s simulation with the default-off injection mechanism, then verify that MCMF assignment remains stable across the complete run.
+Proceed to Stage 4: run the full simulation with the default-off injection mechanism, then verify that MCMF assignment remains stable across the complete run.
 
 After Stage 4 passes, run Stage 5 with injection disabled and `USE_MCMF_ASSIGNMENT = true` to validate natural full-simulation behavior.

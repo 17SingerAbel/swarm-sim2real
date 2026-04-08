@@ -1,7 +1,7 @@
 function result = run_mcmf_stage4_full_injected_simulation(use_mcmf, injection_time)
 %RUN_MCMF_STAGE4_FULL_INJECTED_SIMULATION Run the Stage 4 full injected check.
 %   Stage 4 uses the dedicated full-run injected V46 script and runs the
-%   82 s horizon and enables the augment-or-fallback injection policy.
+%   75 s horizon and enables the augment-or-fallback injection policy.
 
 if nargin < 1
     use_mcmf = true;
@@ -12,7 +12,7 @@ end
 
 setenv('ENABLE_MCMF_STAGE3_TEST', '1');
 setenv('ENABLE_MCMF_STAGE4_TEST', '1');
-setenv('MCMF_STAGE3_SIMULATION_TIME', '82');
+setenv('MCMF_STAGE3_SIMULATION_TIME', '75');
 setenv('MCMF_STAGE3_INJECTION_TIME', num2str(injection_time));
 setenv('MCMF_STAGE3_USE_MCMF', string(double(use_mcmf)));
 
@@ -62,8 +62,8 @@ assert(all(strcmp(stage3_assignment_snapshot.sensor_roles, SENSOR_ROLES.INTERCEP
 assert(all(cellfun(@(target) ~isempty(target), stage3_assignment_snapshot.proactive_targets)), ...
     'Stage4:MissingProactiveTargets', ...
     'At least one selected sensor did not receive a proactive target.');
-assert(current_time >= 81.9, 'Stage4:DidNotReachFullRun', ...
-    'Stage 4 did not reach the expected full 82 s horizon.');
+assert(current_time >= 74.9, 'Stage4:DidNotReachFullRun', ...
+    'Stage 4 did not reach the expected full 75 s horizon.');
 
 any_selected_sensor_moved = false;
 unique_assigned_sensors = unique(assigned_sensors);

@@ -8,7 +8,7 @@ The adapter tests are designed to validate the middle layer between the full WSN
 mock simulation state -> buildAssignmentCostMatrixForCallingTargets -> solveInterceptorAssignments
 ```
 
-This is intentionally separate from the full 82 s animation simulation. It lets us force simultaneous `PENDING_SELECTION`-like situations without depending on EKF convergence timing, target trajectories, or random target motion.
+This is intentionally separate from the full 75 s animation simulation. It lets us force simultaneous `PENDING_SELECTION`-like situations without depending on EKF convergence timing, target trajectories, or random target motion.
 
 The important idea is that each test uses simulation-shaped data: active trackers, sensor positions, target intercept points, predictor EKF states, and detection times. The adapter then produces the same type of candidate list and cost matrix that V46 uses inside the real simulation.
 

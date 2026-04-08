@@ -138,7 +138,7 @@ Status: implemented for MCMF mode.
 Question to answer:
 
 ```text
-Does the full 82 s simulation remain stable after one controlled simultaneous MCMF selection event?
+Does the full 75 s simulation remain stable after one controlled simultaneous MCMF selection event?
 ```
 
 Implemented approach:
@@ -146,7 +146,7 @@ Implemented approach:
 ```text
 Use run_mcmf_stage4_full_injected_simulation.m.
 Call example_v46_stage4_Yeqi.m, not example_v46_stage3_Yeqi.m.
-Run the full 82 s simulation.
+Run the full 75 s simulation.
 Keep USE_MCMF_ASSIGNMENT = true.
 Keep the real cost function unchanged.
 Check assignment_events, selected sensors, movement, handover aftermath, and MAT outputs.
