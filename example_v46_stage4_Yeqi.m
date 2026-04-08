@@ -62,11 +62,16 @@ rng(0);
 
 stage3_flag_env = getenv('ENABLE_MCMF_STAGE3_TEST');
 ENABLE_MCMF_STAGE3_TEST = any(strcmpi(stage3_flag_env, {'1', 'true', 'yes', 'on'}));
+stage4_flag_env = getenv('ENABLE_MCMF_STAGE4_TEST');
+ENABLE_MCMF_STAGE4_TEST = any(strcmpi(stage4_flag_env, {'1', 'true', 'yes', 'on'}));
 
 %% Persistent logging setup
 run_timestamp = datestr(now, 'yyyymmdd_HHMMSS');
 if ~exist('logs', 'dir'), mkdir('logs'); end
-if ENABLE_MCMF_STAGE3_TEST
+if ENABLE_MCMF_STAGE4_TEST
+    log_filename  = sprintf('logs/mcmf_stage4_log_%s.log', run_timestamp);
+    mat_filename  = sprintf('logs/mcmf_stage4_data_%s.mat', run_timestamp);
+elseif ENABLE_MCMF_STAGE3_TEST
     log_filename  = sprintf('logs/mcmf_stage3_log_%s.log', run_timestamp);
     mat_filename  = sprintf('logs/mcmf_stage3_data_%s.mat', run_timestamp);
 else
@@ -114,7 +119,7 @@ a = 1.5;                % Sensor coverage radius (increased by 50%)
 node_spacing = 8*a;     % Distance between nodes
 grid_size = 5;          % Grid size
 dt = 0.1;               % Time step (delta_ts)
-simulation_time = 82;   % Total simulation time
+simulation_time = 75;   % Total simulation time
 % target_velocity = 1.0;  % Target speed (units/s)  % Remove global target_velocity, now handled per target
 sensor_velocity = 0.75;  % Sensor tracking speed (units/s)
 randomness = 0.5;       % Target movement randomness
@@ -149,9 +154,16 @@ if ENABLE_MCMF_STAGE3_TEST && ~isnan(stage3_injection_time_env) && stage3_inject
     MCMF_STAGE3_INJECTION_TIME = stage3_injection_time_env;
 end
 if ENABLE_MCMF_STAGE3_TEST
-    fprintf(fid, '[t= 0.00][MCMF_TEST_CONFIG] Stage 3 assignment mode: %s\n', stage3_assignment_mode);
-    fprintf(fid, '[t= 0.00][MCMF_TEST_CONFIG] Stage 3 simulation_time=%.2f, injection_time=%.2f\n', ...
-        simulation_time, MCMF_STAGE3_INJECTION_TIME);
+    if ENABLE_MCMF_STAGE4_TEST
+        fprintf(fid, '[t= 0.00][MCMF_TEST_CONFIG] Stage 4 assignment mode: %s\n', stage3_assignment_mode);
+        fprintf(fid, '[t= 0.00][MCMF_TEST_CONFIG] Stage 4 simulation_time=%.2f, injection_time=%.2f\n', ...
+            simulation_time, MCMF_STAGE3_INJECTION_TIME);
+        fprintf(fid, '[t= 0.00][MCMF_STAGE4_INJECTION] injection_policy=AUGMENT_OR_FALLBACK\n');
+    else
+        fprintf(fid, '[t= 0.00][MCMF_TEST_CONFIG] Stage 3 assignment mode: %s\n', stage3_assignment_mode);
+        fprintf(fid, '[t= 0.00][MCMF_TEST_CONFIG] Stage 3 simulation_time=%.2f, injection_time=%.2f\n', ...
+            simulation_time, MCMF_STAGE3_INJECTION_TIME);
+    end
 end
 
 % Grid dimensions (staggered hex grid, including sensor coverage radius)
@@ -569,7 +581,9 @@ assignment_events = struct('time', {}, 'algorithm', {}, 'calling_targets', {}, .
 stage3_injection_done = false;
 stage3_injection_info = struct('enabled', ENABLE_MCMF_STAGE3_TEST, ...
     'injected', false, 'injection_time', [], 'forced_targets', [], ...
-    'forced_active_trackers', {{}}, 'intercept_points', []);
+    'forced_active_trackers', {{}}, 'intercept_points', [], ...
+    'injection_policy', '', 'actual_injection_mode', '', ...
+    'natural_target', [], 'companion_target', []);
 stage3_assignment_snapshot = [];
 
 %% Main simulation loop
@@ -695,23 +709,86 @@ for t = 1:simulation_time/dt
         end
     end
 
-    %% Stage 3 short controlled simulation injection
+    %% Stage 3/4 controlled simulation injection
     if ENABLE_MCMF_STAGE3_TEST && ~stage3_injection_done && current_time >= MCMF_STAGE3_INJECTION_TIME
+        natural_pending_targets = [];
+        if ENABLE_MCMF_STAGE4_TEST
+            for pending_tid = 1:num_targets
+                has_valid_process_data = ~isempty(interceptor_process_data{pending_tid}) && ...
+                    isfield(interceptor_process_data{pending_tid}, 'predictor_id') && ...
+                    isfield(interceptor_process_data{pending_tid}, 'intercept_point') && ...
+                    isfield(interceptor_process_data{pending_tid}, 'target_position');
+                if strcmp(interceptor_process_state{pending_tid}, 'PENDING_SELECTION') && has_valid_process_data
+                    natural_pending_targets = [natural_pending_targets; pending_tid]; %#ok<AGROW>
+                end
+            end
+        end
+
+        injection_policy = 'FALLBACK_CONTROLLED';
+        actual_injection_mode = 'FALLBACK_CONTROLLED';
+        natural_target = [];
+        companion_target = [];
         forced_targets = [1; 2];
         forced_tracker_sets = {[1; 2], [3; 4]};
+
+        if ENABLE_MCMF_STAGE4_TEST
+            injection_policy = 'AUGMENT_OR_FALLBACK';
+            if ~isempty(natural_pending_targets)
+                natural_target = natural_pending_targets(1);
+                if natural_target == 1
+                    companion_preference = [2, 3];
+                elseif natural_target == 2
+                    companion_preference = [1, 3];
+                else
+                    companion_preference = [1, 2];
+                end
+
+                companion_target = [];
+                for preference_idx = 1:length(companion_preference)
+                    candidate_tid = companion_preference(preference_idx);
+                    candidate_has_valid_data = ~isempty(interceptor_process_data{candidate_tid}) && ...
+                        isfield(interceptor_process_data{candidate_tid}, 'intercept_point');
+                    if candidate_tid ~= natural_target && ~candidate_has_valid_data
+                        companion_target = candidate_tid;
+                        break;
+                    end
+                end
+
+                if ~isempty(companion_target)
+                    all_active_trackers_for_companion = [];
+                    for active_tid = 1:num_targets
+                        all_active_trackers_for_companion = [all_active_trackers_for_companion; active_trackers{active_tid}(:)]; %#ok<AGROW>
+                    end
+                    available_tracker_pool = setdiff((1:num_nodes)', unique(all_active_trackers_for_companion));
+                    companion_trackers = available_tracker_pool(1:MAX_ACTIVE_TRACKERS);
+                    forced_targets = companion_target;
+                    forced_tracker_sets = {companion_trackers};
+                    actual_injection_mode = 'AUGMENT_NATURAL_PENDING';
+                end
+            end
+        end
+
         forced_target_velocities = [1.0, 0.2; 0.8, 0.25];
+        if any(forced_targets == 3)
+            forced_target_velocities = [forced_target_velocities; 1.2, 0.3];
+        end
         forced_intercept_points = zeros(length(forced_targets), 2);
 
-        for cleanup_tid = 1:num_targets
-            for forced_idx = 1:length(forced_targets)
-                active_trackers{cleanup_tid} = setdiff(active_trackers{cleanup_tid}, forced_tracker_sets{forced_idx});
+        if strcmp(actual_injection_mode, 'FALLBACK_CONTROLLED')
+            for cleanup_tid = 1:num_targets
+                for forced_idx = 1:length(forced_targets)
+                    active_trackers{cleanup_tid} = setdiff(active_trackers{cleanup_tid}, forced_tracker_sets{forced_idx});
+                end
             end
+        else
+            fprintf(fid, ['[t=%5.2f][MCMF_STAGE4_INJECTION] Natural target %d already PENDING_SELECTION; ' ...
+                'injecting companion target %d only\n'], current_time, natural_target, companion_target);
         end
 
         for forced_idx = 1:length(forced_targets)
             forced_tid = forced_targets(forced_idx);
             forced_trackers = forced_tracker_sets{forced_idx};
-            forced_velocity = forced_target_velocities(forced_idx, :);
+            forced_velocity = forced_target_velocities(forced_tid, :);
             forced_target_position = target_positions(forced_tid, :);
             forced_loss_point = forced_target_position + 4.0 * forced_velocity;
             forced_intercept_point = applySafetyMargin(forced_target_position, forced_loss_point, SAFETY_MARGIN);
@@ -766,11 +843,27 @@ for t = 1:simulation_time/dt
             'injected', true, 'injection_time', current_time, ...
             'forced_targets', forced_targets', ...
             'forced_active_trackers', {forced_tracker_sets}, ...
-            'intercept_points', forced_intercept_points);
-        fprintf(fid, ['[t=%5.2f][MCMF_TEST_INJECTION] Forced simultaneous PENDING_SELECTION ' ...
-            'for targets [%s], active trackers T1=[%s], T2=[%s]\n'], ...
-            current_time, num2str(forced_targets'), num2str(forced_tracker_sets{1}'), ...
-            num2str(forced_tracker_sets{2}'));
+            'intercept_points', forced_intercept_points, ...
+            'injection_policy', injection_policy, ...
+            'actual_injection_mode', actual_injection_mode, ...
+            'natural_target', natural_target, ...
+            'companion_target', companion_target);
+        if strcmp(actual_injection_mode, 'FALLBACK_CONTROLLED')
+            fprintf(fid, ['[t=%5.2f][MCMF_TEST_INJECTION] Forced simultaneous PENDING_SELECTION ' ...
+                'for targets [%s], active trackers T1=[%s], T2=[%s]\n'], ...
+                current_time, num2str(forced_targets'), num2str(forced_tracker_sets{1}'), ...
+                num2str(forced_tracker_sets{2}'));
+            if ENABLE_MCMF_STAGE4_TEST
+                fprintf(fid, ['[t=%5.2f][MCMF_STAGE4_INJECTION] actual_injection_mode=%s, ' ...
+                    'fallback_targets=[%s]\n'], current_time, actual_injection_mode, ...
+                    num2str(forced_targets'));
+            end
+        else
+            fprintf(fid, ['[t=%5.2f][MCMF_STAGE4_INJECTION] actual_injection_mode=%s, ' ...
+                'natural_target=%d, companion_target=%d, companion_trackers=[%s]\n'], ...
+                current_time, actual_injection_mode, natural_target, companion_target, ...
+                num2str(forced_tracker_sets{1}'));
+        end
     end
     
     %% NEW: Individual Tracker Loss Prediction per target (with EKF convergence + stability check)
@@ -1096,6 +1189,9 @@ for t = 1:simulation_time/dt
 
                     if ENABLE_MCMF_STAGE3_TEST && stage3_injection_info.injected && isempty(stage3_assignment_snapshot)
                         expected_injected_targets = stage3_injection_info.forced_targets(:);
+                        if ~isempty(stage3_injection_info.natural_target)
+                            expected_injected_targets = unique([expected_injected_targets; stage3_injection_info.natural_target], 'stable');
+                        end
                     end
                     if ENABLE_MCMF_STAGE3_TEST && stage3_injection_info.injected && isempty(stage3_assignment_snapshot) && ...
                             all(ismember(expected_injected_targets, all_calling_targets'))

@@ -55,6 +55,18 @@ The main goal is not only to change the assignment algorithm, but also to make t
 - The runner now accepts `run_mcmf_stage3_short_controlled_simulation(false)` to run the real Stage 3 simulation with the legacy assignment path while still printing the MCMF comparison on the same event.
 - Fixed a Stage 3 movement edge case found by the `8 s / 5 s / legacy` run: if the low-confidence branch switches a legacy-selected interceptor to `RETURNING_HOME`, the script no longer tries to use an unassigned `new_direction`.
 
+### Stage 4 Full Injected Simulation
+
+- Added `example_v46_stage4_Yeqi.m` as the dedicated Stage 4 simulation script, keeping Stage 3 and Stage 4 injection logic separate.
+- Added `run_mcmf_stage4_full_injected_simulation.m` for full 82 s injected simulation runs.
+- Stage 4 uses an `AUGMENT_OR_FALLBACK` injection policy:
+  - augment an existing valid natural `PENDING_SELECTION` target when available;
+  - otherwise use fallback controlled target 1/2 injection.
+- Stage 4 writes separate output prefixes:
+  - `logs/mcmf_stage4_log_*.log`
+  - `logs/mcmf_stage4_data_*.mat`
+- Verified Stage 4 MCMF run completed to `82.00 s` with fallback controlled injection at `15.00 s`.
+
 ### Legacy Compatibility Fix
 
 - Fixed a legacy solver edge case for multi-target shortage/exact-team-size inputs.

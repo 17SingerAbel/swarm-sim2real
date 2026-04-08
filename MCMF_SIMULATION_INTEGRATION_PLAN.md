@@ -15,7 +15,7 @@ This document intentionally separates simulation integration testing from `MCMF_
 
 For the detailed Stage 3 test case, cost matrix, legacy comparison, and verification output, see `MCMF_STAGE3_TEST_PLAN.md`.
 
-For the proposed Stage 4 full injected simulation test plan, see `MCMF_STAGE4_TEST_PLAN.md`.
+For the Stage 4 full injected simulation README and latest verification result, see `MCMF_STAGE4_TEST_PLAN.md`.
 
 ## Stage Definitions
 
@@ -133,7 +133,7 @@ MAT and log outputs are generated.
 
 ### Stage 4: Full Simulation With Injection
 
-Status: not implemented yet.
+Status: implemented for MCMF mode.
 
 Question to answer:
 
@@ -141,14 +141,26 @@ Question to answer:
 Does the full 82 s simulation remain stable after one controlled simultaneous MCMF selection event?
 ```
 
-Recommended approach:
+Implemented approach:
 
 ```text
-Reuse the default-off injection mechanism.
-Run the full 82 s simulation instead of the 8 s Stage 3 slice.
+Use run_mcmf_stage4_full_injected_simulation.m.
+Call example_v46_stage4_Yeqi.m, not example_v46_stage3_Yeqi.m.
+Run the full 82 s simulation.
 Keep USE_MCMF_ASSIGNMENT = true.
 Keep the real cost function unchanged.
 Check assignment_events, selected sensors, movement, handover aftermath, and MAT outputs.
+```
+
+Latest Stage 4 MCMF result:
+
+```text
+Actual injection mode = FALLBACK_CONTROLLED
+Assignment time = 15.00 s
+Final simulation time = 82.00 s
+MCMF total cost = 1.0341
+Legacy total cost on same matrix = 1.0968
+MCMF improvement = 0.0626
 ```
 
 Stage 4 can bypass EKF convergence and prediction stability only for the injected event because those are handover trigger gates, not the MCMF assignment objective.
@@ -239,10 +251,9 @@ Stage 5 requires the injection flag to be off.
 
 ## Recommended Next Step
 
-Proceed to Stage 4:
+Proceed to Stage 4 legacy-mode verification or Stage 5:
 
 ```text
-Run a full 82 s simulation with the same default-off injection mechanism.
-Verify that the system remains stable after the MCMF event over the complete run.
-Document the full-run assignment event, movement behavior, and any handover aftermath.
+Optional: run run_mcmf_stage4_full_injected_simulation(false, 15) to verify the full-run legacy path.
+Then run Stage 5 as a full natural simulation with injection disabled.
 ```

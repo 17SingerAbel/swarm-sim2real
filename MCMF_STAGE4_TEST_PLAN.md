@@ -1,8 +1,8 @@
-# MCMF Stage 4 Full Injected Simulation Test Plan
+# MCMF Stage 4 Full Injected Simulation README
 
 ## Summary
 
-Stage 4 is the next validation layer after the Stage 3 short controlled simulation. It should not change the MCMF algorithm, cost function, target trajectories, EKF parameters, or the Stage 3 injection mechanism.
+Stage 4 is the validation layer after the Stage 3 short controlled simulation. It does not change the MCMF algorithm, cost function, target trajectories, EKF parameters, or the main `example_V46_Yeqi.m` file.
 
 The main idea is:
 
@@ -45,21 +45,21 @@ Stage 4 is weaker than Stage 5 because it still bypasses natural simultaneous-tr
 
 ## Proposed Setup
 
-Use the existing Stage 3 dedicated script:
+Use the dedicated Stage 4 script:
 
 ```text
-example_v46_stage3_Yeqi.m
+example_v46_stage4_Yeqi.m
 ```
 
 Reason:
 
 ```text
 The main example_V46_Yeqi.m file should remain clean and free of injection hooks.
-The dedicated Stage 3 script already contains the default-off injection mechanism.
-Stage 4 can reuse the same injection mechanism with a longer runtime.
+The Stage 4 script contains the augment-or-fallback injection mechanism.
+Stage 3 remains isolated in example_v46_stage3_Yeqi.m.
 ```
 
-Recommended future runner:
+Runner:
 
 ```text
 run_mcmf_stage4_full_injected_simulation.m
@@ -74,7 +74,7 @@ setenv('MCMF_STAGE3_INJECTION_TIME', '15');
 setenv('MCMF_STAGE3_USE_MCMF', '1');
 ```
 
-Although the environment variable names still say `STAGE3`, they currently refer to the shared controlled-injection mechanism inside `example_v46_stage3_Yeqi.m`. If this becomes confusing, the Stage 4 implementation can later rename them to a more general prefix such as `MCMF_INJECTED_SIMULATION_*`.
+Although some environment variable names still say `STAGE3`, the Stage 4 runner now calls `example_v46_stage4_Yeqi.m` and writes `logs/mcmf_stage4_*` outputs.
 
 ## Injection Choice
 
@@ -214,16 +214,58 @@ Full 82 s simulation with injection disabled and USE_MCMF_ASSIGNMENT = true.
 
 Do not modify `example_V46_Yeqi.m` for Stage 4.
 
-Recommended implementation:
+Implemented approach:
 
 ```text
-1. Create run_mcmf_stage4_full_injected_simulation.m.
-2. Reuse example_v46_stage3_Yeqi.m.
+1. Created run_mcmf_stage4_full_injected_simulation.m.
+2. Created example_v46_stage4_Yeqi.m.
 3. Set simulation time to 82 s.
-4. Keep injection time at 15 s for the first Stage 4 run.
-5. Keep MCMF enabled for the first Stage 4 run.
-6. Preserve automatic legacy comparison.
-7. Write a Stage 4 README/report only after the run passes.
+4. Kept injection time at 15 s for the first Stage 4 run.
+5. Kept MCMF enabled for the first Stage 4 verified run.
+6. Preserved automatic legacy comparison on the same event cost matrix.
 ```
 
 This keeps the main V46 simulation clean while allowing controlled full-run integration testing.
+
+## Latest Verification Result
+
+Latest verified Stage 4 MCMF run:
+
+```text
+Stage 4 full injected simulation passed.
+MAT output: logs/mcmf_stage4_data_20260407_174002.mat
+Log output: logs/mcmf_stage4_log_20260407_174002.log
+Injection policy: AUGMENT_OR_FALLBACK
+Actual injection mode: FALLBACK_CONTROLLED
+Assignment time: 15.00 s
+Final simulation time: 82.00 s
+Actual algorithm run in simulation: MCMF
+Calling targets: [1  2]
+Actual assigned sensors: [6  8  7  9]
+Actual total cost: 1.0341
+
+MCMF target 1 -> [6  8]
+MCMF target 2 -> [7  9]
+MCMF total cost: 1.0341
+
+Legacy target 1 -> [8  6]
+Legacy target 2 -> [7  12]
+Legacy total cost: 1.0968
+MCMF cost improvement: 0.0626
+```
+
+Interpretation:
+
+```text
+At t = 15.00 s, no valid natural PENDING_SELECTION was available to augment, so Stage 4 used FALLBACK_CONTROLLED injection.
+The simulation continued to the full 82.00 s horizon after the injected MCMF assignment.
+The same event cost matrix still shows MCMF lower total cost than legacy.
+```
+
+Validation also reran the existing module and adapter tests:
+
+```text
+test_interceptor_assignment: 5 passed
+test_mcmf_simulation_adapter: 5 passed
+run_mcmf_stage4_full_injected_simulation.m checkcode issues: 0
+```
