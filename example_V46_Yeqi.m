@@ -142,18 +142,12 @@ sensor_roles = repmat({SENSOR_ROLES.NONE}, num_nodes, 1);
 sensor_state_history = cell(num_nodes, 1);
 
 % NEW: three target setup
-num_targets = 3;  % Or make this configurable
+num_targets = 2;  % Or make this configurable
 waypoints_list = cell(num_targets, 1);
-waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];
-waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692];
-waypoints_list{3} = [0,15; 15,20; 30,25; 45,30; 60,35; 70,40; 80,45];  % Third target path
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];
+% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692];
+% waypoints_list{3} = [0,15; 15,20; 30,25; 45,30; 60,35; 70,40; 80,45];  % Third target path
 
-% Different speeds per target
-target_velocities = [1.0, 1.1, 1.2];  % Target 1: normal, Target 2: slower, Target 3: faster
-% target_velocities = [1.0, 1.3, 1.5];
-
-% Different entry times
-target_start_time = [0, 4.0, 6.5];  % Staggered entry times
 
 % Target state arrays
 target_positions = zeros(num_targets, 2);
@@ -161,11 +155,65 @@ target_trajectories = cell(num_targets, 1);
 current_waypoint_idx = ones(num_targets, 1);
 noise = 0.01;
 
+
+waypoints_list = cell(num_targets, 1);
+
+% % EXAMPLE 1
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+% waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
+
+% % waypoint 1：y + 10
+% waypoints_list{1}(:,2) = waypoints_list{1}(:,2) + 10;
+
+% % waypoint 2：y - 10
+% waypoints_list{2}(:,2) = waypoints_list{2}(:,2) - 10;
+
+% % Different speeds per target
+% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% % Different entry times
+% target_start_time = [0.0, 0.0];  % Staggered entry times
+
+% % Initialize with time lag - Target 2 starts later
+% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+% target_positions(2, :) = waypoints_list{2}(1, :);
+% target_trajectories{1} = target_positions(1, :);
+% target_trajectories{2} = target_positions(2, :);
+
+% Example 2
+% Same-direction trajectories with time lag
+waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];  % lower left to upper right
+waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
+
+target_velocities = [1.0, 1.0]; 
+% Add time lag control
+target_start_time = [0, 0.0];  % Target 2 starts 2 seconds later
+
 % Initialize with time lag - Target 2 starts later
 target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = [-15, 0];  % Target 2 starts off-screen, will enter later
+target_positions(2, :) = [0, 0];  % Target 2 starts off-screen, will enter later
 target_trajectories{1} = target_positions(1, :);
 target_trajectories{2} = target_positions(2, :);
+
+
+
+% % Different speeds per target
+% target_velocities = [1.0, 1.1, 1.2];  % Target 1: normal, Target 2: slower, Target 3: faster
+% % target_velocities = [1.0, 1.3, 1.5];
+
+% % Different entry times
+% target_start_time = [0, 4.0, 6.5];  % Staggered entry times
+
+% % Target state arrays
+% target_positions = zeros(num_targets, 2);
+% target_trajectories = cell(num_targets, 1);
+% current_waypoint_idx = ones(num_targets, 1);
+% noise = 0.01;
+
+% % Initialize with time lag - Target 2 starts later
+% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+% target_positions(2, :) = [-15, 0];  % Target 2 starts off-screen, will enter later
+% target_trajectories{1} = target_positions(1, :);
+% target_trajectories{2} = target_positions(2, :);
 
 % NEW: Prediction stability tracking per target
 previous_loss_predictions = zeros(num_nodes, num_targets);     % Track previous prediction for each sensor-target pair
@@ -524,12 +572,22 @@ node_positions_history = zeros(round(simulation_time/dt), num_nodes, 2);
 
 % NEW: Structured log of every interceptor handover event
 interceptor_events = struct('time', {}, 'target_id', {}, 'predictor_sensor', {}, ...
-    'selected_sensors', {}, 'intercept_point', {}, 'loss_time', {});
+    'selected_sensors', {}, 'selected_costs', {}, 'intercept_point', {}, 'loss_time', {});
 
 assignment_events = struct('time', {}, 'algorithm', {}, 'calling_targets', {}, ...
     'candidate_sensors', {}, 'requested_slots_per_target', {}, ...
     'assigned_slots_per_target', {}, 'assigned_slots_total', {}, ...
-    'assignments', {}, 'total_cost', {}, 'cost_matrix', {});
+    'assignments', {}, 'selected_costs', {}, 'assignment_costs_per_target', {}, ...
+    'total_cost', {}, 'cost_matrix', {}, ...
+    'mcmf_assignments', {}, 'mcmf_selected_costs', {}, ...
+    'mcmf_assignment_costs_per_target', {}, 'mcmf_total_cost', {}, ...
+    'legacy_assignments', {}, 'legacy_selected_costs', {}, ...
+    'legacy_assignment_costs_per_target', {}, 'legacy_total_cost', {}, ...
+    'comparison_delta_total_cost', {});
+
+interceptor_employ_events = struct('time', {}, 'sensor_id', {}, ...
+    'from_target_id', {}, 'to_target_id', {}, 'algorithm', {}, ...
+    'previous_intercept_point', {}, 'new_intercept_point', {}, 'new_assignment_cost', {});
 
 %% Main simulation loop
 for t = 1:simulation_time/dt
@@ -791,6 +849,7 @@ for t = 1:simulation_time/dt
                 new_event = struct('time', current_time, 'target_id', target_id, ...
                     'predictor_sensor', earliest_loss_sensor, ...
                     'selected_sensors', [], ...
+                    'selected_costs', [], ...
                     'intercept_point', safe_intercept_point, ...
                     'loss_time', earliest_loss_time);
                 interceptor_events(end+1) = new_event;
@@ -872,15 +931,87 @@ for t = 1:simulation_time/dt
                         sensor_detection_times, current_time, communication_range, ...
                         wsn_width, wsn_height);
 
-                    [selected_assignments, assignment_info] = solveInterceptorAssignments( ...
+                    [mcmf_assignments, mcmf_info] = solveInterceptorAssignmentMCMF( ...
                         all_calling_targets, available_sensors, assignment_cost_matrix, ...
-                        MAX_ACTIVE_TRACKERS, USE_MCMF_ASSIGNMENT);
+                        MAX_ACTIVE_TRACKERS);
+                    [legacy_assignments, legacy_info] = solveInterceptorAssignmentLegacy( ...
+                        all_calling_targets, available_sensors, assignment_cost_matrix, ...
+                        MAX_ACTIVE_TRACKERS);
+
+                    if USE_MCMF_ASSIGNMENT
+                        selected_assignments = mcmf_assignments;
+                        assignment_info = mcmf_info;
+                    else
+                        selected_assignments = legacy_assignments;
+                        assignment_info = legacy_info;
+                    end
 
                     fprintf(fid, ['[t=%5.2f][ASSIGN] %s selected for targets [%s] with %d candidates, ' ...
                         'requested=%d, assigned=%d, total_cost=%.3f\n'], ...
                         current_time, assignment_info.algorithm, num2str(all_calling_targets'), ...
                         length(available_sensors), assignment_info.requested_slots_total, ...
                         assignment_info.assigned_slots_total, assignment_info.total_cost);
+
+                    fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] targets=[%s] candidates=%d | ' ...
+                        'MCMF assigned=%d total_cost=%.3f | LEGACY assigned=%d total_cost=%.3f | delta(MCMF-LEGACY)=%.3f\n'], ...
+                        current_time, num2str(all_calling_targets'), length(available_sensors), ...
+                        mcmf_info.assigned_slots_total, mcmf_info.total_cost, ...
+                        legacy_info.assigned_slots_total, legacy_info.total_cost, ...
+                        mcmf_info.total_cost - legacy_info.total_cost);
+
+                    mcmf_selected_costs_by_target = cell(length(all_calling_targets), 1);
+                    legacy_selected_costs_by_target = cell(length(all_calling_targets), 1);
+                    selected_costs_by_target = cell(length(all_calling_targets), 1);
+                    for log_idx = 1:length(all_calling_targets)
+                        mcmf_team_for_log = mcmf_assignments{log_idx};
+                        mcmf_costs_for_log = nan(size(mcmf_team_for_log));
+                        mcmf_cost_text = '';
+                        for cost_idx = 1:numel(mcmf_team_for_log)
+                            selected_sensor = mcmf_team_for_log(cost_idx);
+                            candidate_row = find(available_sensors == selected_sensor, 1);
+                            if ~isempty(candidate_row)
+                                mcmf_costs_for_log(cost_idx) = assignment_cost_matrix(candidate_row, log_idx);
+                            end
+                            mcmf_cost_text = [mcmf_cost_text, ...
+                                sprintf('S%d=%.3f ', selected_sensor, mcmf_costs_for_log(cost_idx))]; %#ok<AGROW>
+                        end
+                        mcmf_selected_costs_by_target{log_idx} = mcmf_costs_for_log;
+                        fprintf(fid, ['[t=%5.2f][BID_RESULT_COMPARE] MCMF target %d selected=[%s] ' ...
+                            'selected_costs={%s} target_cost=%.3f\n'], ...
+                            current_time, all_calling_targets(log_idx), num2str(mcmf_team_for_log), ...
+                            strtrim(mcmf_cost_text), mcmf_info.assignment_costs_per_target(log_idx));
+
+                        legacy_team_for_log = legacy_assignments{log_idx};
+                        legacy_costs_for_log = nan(size(legacy_team_for_log));
+                        legacy_cost_text = '';
+                        for cost_idx = 1:numel(legacy_team_for_log)
+                            selected_sensor = legacy_team_for_log(cost_idx);
+                            candidate_row = find(available_sensors == selected_sensor, 1);
+                            if ~isempty(candidate_row)
+                                legacy_costs_for_log(cost_idx) = assignment_cost_matrix(candidate_row, log_idx);
+                            end
+                            legacy_cost_text = [legacy_cost_text, ...
+                                sprintf('S%d=%.3f ', selected_sensor, legacy_costs_for_log(cost_idx))]; %#ok<AGROW>
+                        end
+                        legacy_selected_costs_by_target{log_idx} = legacy_costs_for_log;
+                        fprintf(fid, ['[t=%5.2f][BID_RESULT_COMPARE] LEGACY target %d selected=[%s] ' ...
+                            'selected_costs={%s} target_cost=%.3f\n'], ...
+                            current_time, all_calling_targets(log_idx), num2str(legacy_team_for_log), ...
+                            strtrim(legacy_cost_text), legacy_info.assignment_costs_per_target(log_idx));
+
+                        if USE_MCMF_ASSIGNMENT
+                            selected_costs_by_target{log_idx} = mcmf_costs_for_log;
+                            selected_cost_text = mcmf_cost_text;
+                        else
+                            selected_costs_by_target{log_idx} = legacy_costs_for_log;
+                            selected_cost_text = legacy_cost_text;
+                        end
+                        fprintf(fid, ['[t=%5.2f][BID_RESULT] %s target %d selected=[%s] ' ...
+                            'selected_costs={%s} target_cost=%.3f\n'], ...
+                            current_time, assignment_info.algorithm, all_calling_targets(log_idx), ...
+                            num2str(selected_assignments{log_idx}), strtrim(selected_cost_text), ...
+                            assignment_info.assignment_costs_per_target(log_idx));
+                    end
 
                     new_assignment_event = struct( ...
                         'time', current_time, ...
@@ -891,13 +1022,25 @@ for t = 1:simulation_time/dt
                         'assigned_slots_per_target', assignment_info.assigned_slots_per_target', ...
                         'assigned_slots_total', assignment_info.assigned_slots_total, ...
                         'assignments', {selected_assignments}, ...
+                        'selected_costs', {selected_costs_by_target}, ...
+                        'assignment_costs_per_target', assignment_info.assignment_costs_per_target', ...
                         'total_cost', assignment_info.total_cost, ...
-                        'cost_matrix', assignment_cost_matrix);
+                        'cost_matrix', assignment_cost_matrix, ...
+                        'mcmf_assignments', {mcmf_assignments}, ...
+                        'mcmf_selected_costs', {mcmf_selected_costs_by_target}, ...
+                        'mcmf_assignment_costs_per_target', mcmf_info.assignment_costs_per_target', ...
+                        'mcmf_total_cost', mcmf_info.total_cost, ...
+                        'legacy_assignments', {legacy_assignments}, ...
+                        'legacy_selected_costs', {legacy_selected_costs_by_target}, ...
+                        'legacy_assignment_costs_per_target', legacy_info.assignment_costs_per_target', ...
+                        'legacy_total_cost', legacy_info.total_cost, ...
+                        'comparison_delta_total_cost', mcmf_info.total_cost - legacy_info.total_cost);
                     assignment_events(end+1) = new_assignment_event;
 
                     for j = 1:length(all_calling_targets)
                         calling_tid = all_calling_targets(j);
                         selected_team = selected_assignments{j};
+                        selected_team_costs = selected_costs_by_target{j};
 
                         if isempty(selected_team)
                             fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: no interceptors assigned in this round\n', ...
@@ -942,8 +1085,48 @@ for t = 1:simulation_time/dt
 
                         safe_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
 
-                        for winner = selected_team
+                        for winner_idx = 1:numel(selected_team)
+                            winner = selected_team(winner_idx);
+                            winner_cost = selected_team_costs(winner_idx);
                             if ismember(winner, current_interceptors)
+                                previous_assigned_target = -1;
+                                previous_intercept_point = [];
+
+                                if ~isempty(proactive_targets) && length(proactive_targets) >= winner && ...
+                                   ~isempty(proactive_targets{winner})
+                                    previous_intercept_point = proactive_targets{winner};
+                                    for previous_tid = 1:num_targets
+                                        if previous_tid ~= calling_tid && ~isempty(global_interceptor_data{previous_tid}) && ...
+                                           isfield(global_interceptor_data{previous_tid}, 'intercept_point')
+                                            previous_target_point = global_interceptor_data{previous_tid}.intercept_point;
+                                            if norm(previous_intercept_point - previous_target_point) < 1.0
+                                                previous_assigned_target = previous_tid;
+                                                break;
+                                            end
+                                        end
+                                    end
+                                end
+
+                                if previous_assigned_target > 0
+                                    fprintf(fid, ['[t=%5.2f][EMPLOY] Sensor %d was executing target %d intercept ' ...
+                                        'and is now employed by target %d (%s); new_cost=%.3f, ' ...
+                                        'previous_point=[%.2f,%.2f], new_point=[%.2f,%.2f]\n'], ...
+                                        current_time, winner, previous_assigned_target, calling_tid, ...
+                                        assignment_info.algorithm, winner_cost, previous_intercept_point(1), ...
+                                        previous_intercept_point(2), safe_intercept_point(1), safe_intercept_point(2));
+
+                                    new_employ_event = struct( ...
+                                        'time', current_time, ...
+                                        'sensor_id', winner, ...
+                                        'from_target_id', previous_assigned_target, ...
+                                        'to_target_id', calling_tid, ...
+                                        'algorithm', assignment_info.algorithm, ...
+                                        'previous_intercept_point', previous_intercept_point, ...
+                                        'new_intercept_point', safe_intercept_point, ...
+                                        'new_assignment_cost', winner_cost);
+                                    interceptor_employ_events(end+1) = new_employ_event;
+                                end
+
                                 proactive_targets{winner} = safe_intercept_point;
                             else
                                 old_state = sensor_states{winner};
@@ -964,14 +1147,15 @@ for t = 1:simulation_time/dt
                         event_idx = find([interceptor_events.target_id] == calling_tid, 1, 'last');
                         if ~isempty(event_idx)
                             interceptor_events(event_idx).selected_sensors = selected_team;
+                            interceptor_events(event_idx).selected_costs = selected_team_costs;
                         end
 
                         if length(selected_team) < MAX_ACTIVE_TRACKERS
                             fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: shortage, assigned %d of %d requested interceptors\n', ...
                                 current_time, calling_tid, length(selected_team), MAX_ACTIVE_TRACKERS);
                         else
-                            fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: assigned interceptors [%s]\n', ...
-                                current_time, calling_tid, num2str(selected_team));
+                            fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: assigned interceptors [%s] with costs [%s]\n', ...
+                                current_time, calling_tid, num2str(selected_team), num2str(selected_team_costs, '%.3f '));
                         end
                     end
 
@@ -2738,6 +2922,7 @@ save(mat_filename, ...
     'node_positions_history', ...
     'interceptor_events', ...
     'assignment_events', ...
+    'interceptor_employ_events', ...
     'target_trajectories', ...
     'sensor_trajectories', ...
     'sensor_P_trace_history', ...
