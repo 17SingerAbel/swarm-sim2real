@@ -1372,12 +1372,10 @@ for t = 1:simulation_time/dt
             case SENSOR_STATES.INTERCEPTING
 
                 % some debug lines to see what sensors 3,8,14,20 are doing when are called to intercept
-                if ismember(i, [3, 8, 14, 20])
-                    if ~isempty(proactive_targets{i})
-                        current_distance = norm(node_positions(i,:) - proactive_targets{i});
-                        fprintf(fid, '[t=%5.2f][SENSOR] Sensor %d: INTERCEPTING, distance_to_target=%.1f, target=[%.1f,%.1f]\n', ...
-                            current_time, i, current_distance, proactive_targets{i}(1), proactive_targets{i}(2));
-                    end
+                if ~isempty(proactive_targets{i})
+                    current_distance = norm(node_positions(i,:) - proactive_targets{i});
+                    fprintf(fid, '[t=%5.2f][SENSOR] Sensor %d: INTERCEPTING, distance_to_target=%.1f, target=[%.1f,%.1f]\n', ...
+                        current_time, i, current_distance, proactive_targets{i}(1), proactive_targets{i}(2));
                 end
                 
                 % Check if reached intercept point or detected any target
