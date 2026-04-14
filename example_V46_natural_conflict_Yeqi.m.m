@@ -106,7 +106,7 @@ a = 1.5;                % Sensor coverage radius (increased by 50%)
 node_spacing = 8*a;     % Distance between nodes
 grid_size = 5;          % Grid size
 dt = 0.1;               % Time step (delta_ts)
-simulation_time = 15;   % Total simulation time
+simulation_time = 75;   % Total simulation time
 % target_velocity = 1.0;  % Target speed (units/s)  % Remove global target_velocity, now handled per target
 sensor_velocity = 0.75;  % Sensor tracking speed (units/s)
 randomness = 0.5;       % Target movement randomness
@@ -141,19 +141,8 @@ sensor_states = repmat({SENSOR_STATES.IDLE}, num_nodes, 1);
 sensor_roles = repmat({SENSOR_ROLES.NONE}, num_nodes, 1);
 sensor_state_history = cell(num_nodes, 1);
 
-% NEW: target count setup
-num_targets = 2;  % Temporarily disable target 3 for natural-case exploration
-waypoints_list = cell(num_targets, 1);
-waypoints_list{1} = [0, 30; 7, 25; 10, 25; 15,25; 20, 25; 25, 25; 80, 25 ];
-waypoints_list{2} = [0, 10; 7, 15; 10, 15; 15,15; 20, 15; 25, 15; 80, 15 ];
-waypoints_list{3} = [0,15; 15,20; 30,25; 45,30; 60,35; 70,40; 80,45];  % Third target path
-
-% Different speeds per target
-target_velocities = [1.0, 1.0, 1.2];  % Target 1: normal, Target 2: slower, Target 3: faster
-% target_velocities = [1.0, 1.3, 1.5];
-
-% Different entry times
-target_start_time = [0, 0];  % Start targets 1 and 2 together for natural conflict exploration
+% NEW: two target setup
+num_targets = 2;  % Or make this configurable
 
 % Target state arrays
 target_positions = zeros(num_targets, 2);
@@ -161,9 +150,39 @@ target_trajectories = cell(num_targets, 1);
 current_waypoint_idx = ones(num_targets, 1);
 noise = 0.01;
 
+
+waypoints_list = cell(num_targets, 1);
+
+% EXAMPLE 1
+waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
+
+% Different speeds per target
+target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% Different entry times
+target_start_time = [0.0, 0.0];  % Staggered entry times
+
 % Initialize with time lag - Target 2 starts later
 target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = waypoints_list{2}(1, :);  % Target 2 starts immediately
+target_positions(2, :) = waypoints_list{2}(1, :);
+
+
+% % EXAMPLE 2
+% % Same-direction trajectories with time lag
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];
+% % lower left to upper right
+% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
+
+% % Different speeds per target
+% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% % Different entry times
+% target_start_time = [0.0, 4.0];  % Staggered entry times
+
+% % Initialize with time lag - Target 2 starts later
+% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+% target_positions(2, :) = [-15, 0]; % Target 2 starts off-screen, will enter later
+
+
 target_trajectories{1} = target_positions(1, :);
 target_trajectories{2} = target_positions(2, :);
 
@@ -200,6 +219,7 @@ end
 
 node_positions = full_grid;
 original_positions = node_positions;
+disp(node_positions);
 
 %% Initialize tracking variables - UPDATED FOR three TARGETS
 active_trackers = cell(num_targets, 1);           % Array of currently active tracking sensors per target
@@ -484,7 +504,7 @@ for i = 1:num_nodes
         sprintf('%d', i), 'FontSize', 8, 'FontWeight', 'bold', 'Color', 'k');
 end
 
-% Initialize three targets
+% Initialize two targets
 target_handles = gobjects(num_targets, 1);
 trajectory_handles = gobjects(num_targets, 1);
 target_colors = {'r', 'g', 'b', 'm', 'c', 'k'};  % Support up to 6 targets
@@ -993,7 +1013,7 @@ for t = 1:simulation_time/dt
     prev_sensor_states = sensor_states;
     prev_sensor_roles = sensor_roles;
     
-    %% System-level FSM (modified for three targets)
+    %% System-level FSM (modified for multiple targets)
     switch system_state
         case SYSTEM_STATES.IDLE
             if ~isempty(detecting_sensors)
@@ -1071,7 +1091,7 @@ for t = 1:simulation_time/dt
             end
     end
     
-    %% TRACKING PHASE LOGIC (modified for three targets)
+    %% TRACKING PHASE LOGIC (modified for multiple targets)
     if strcmp(system_state, SYSTEM_STATES.TRACKING) || strcmp(system_state, SYSTEM_STATES.REACQUIRING)
         target_loss_processed = false;
         
@@ -1222,7 +1242,7 @@ for t = 1:simulation_time/dt
         end
     end
     
-    %% Sensor-level FSM updates (modified for three targets)
+    %% Sensor-level FSM updates (modified for multiple targets)
     for i = 1:num_nodes
         prev_state = sensor_states{i};
         prev_role = sensor_roles{i};
@@ -1695,23 +1715,6 @@ for t = 1:simulation_time/dt
                         h2_t2 = plot(middle_contour_points(:,1), middle_contour_points(:,2), 'y-', 'LineWidth', 1);
                         contour_handles_t2 = [h1_t2, h2_t2];
                         
-                    elseif target_id == 3
-                        % Target 3 contours - Blue theme
-                        if exist('contour_3sigma_handle_t3', 'var') && ishandle(contour_3sigma_handle_t3)
-                            delete(contour_3sigma_handle_t3);
-                        end
-                        if exist('contour_handles_t3', 'var') && ~isempty(contour_handles_t3)
-                            for h = contour_handles_t3
-                                if ishandle(h)
-                                    delete(h);
-                                end
-                            end
-                        end
-                        
-                        contour_3sigma_handle_t3 = plot(contour_points(:,1), contour_points(:,2), 'b--', 'LineWidth', 1.5);
-                        h1_t3 = plot(inner_contour_points(:,1), inner_contour_points(:,2), 'k-', 'LineWidth', 1);
-                        h2_t3 = plot(middle_contour_points(:,1), middle_contour_points(:,2), 'Color', [0.5 0.5 0.5], 'LineWidth', 1);
-                        contour_handles_t3 = [h1_t3, h2_t3];
                     end
                     
                     % Add swept area visualization (for first target only to avoid conflicts)
@@ -1943,9 +1946,9 @@ for t = 1:simulation_time/dt
         end
     end
     
-    %% Update display (modified for three targets)
+    %% Update display (modified for multiple targets)
     if mod(t, update_frequency) == 0 || t == 1
-        % Update three target positions
+        % Update target positions
         for target_id = 1:num_targets
             % Only update if target has started moving and has trajectory data
             if current_time >= target_start_time(target_id) && ~isempty(target_trajectories{target_id})
@@ -2031,7 +2034,7 @@ for t = 1:simulation_time/dt
             set(node_handles(i), 'XData', node_positions(i,1), 'YData', node_positions(i,2));
             set(circle_handles(i), 'XData', xunit + node_positions(i,1), 'YData', yunit + node_positions(i,2));
             
-            % Color scheme for three target tracking
+            % Color scheme for target tracking
             switch sensor_states{i}
                 case SENSOR_STATES.TRACKING
                     if strcmp(sensor_roles{i}, SENSOR_ROLES.PRIMARY_TRACKER)
@@ -2106,7 +2109,7 @@ for t = 1:simulation_time/dt
             set(sensor_text_handles(i), 'Position', [node_positions(i,1)+0.3, node_positions(i,2)+0.3, 0]);
         end
         
-        % Update status text for three targets
+        % Update status text for targets
         num_tracking = sum(cellfun(@(x) strcmp(x, SENSOR_STATES.TRACKING), sensor_states));
         num_intercepting = sum(cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
         num_searching = sum(cellfun(@(x) strcmp(x, SENSOR_STATES.SEARCHING), sensor_states));
@@ -2372,7 +2375,7 @@ if last_contour_state == 1 && ~isempty(current_contour_period)
     contour_periods{end+1} = current_contour_period;
 end
 
-% NEW: three target interceptor analysis
+% NEW: multiple target interceptor analysis
 interceptor_assignments = 0;
 successful_intercepts = 0;
 missed_intercepts = 0;
@@ -2446,7 +2449,7 @@ for i = 1:num_nodes
     end
 end
 
-% NEW: Analyze handover events for three targets
+% NEW: Analyze handover events for multiple targets
 immediate_handovers = 0;
 planned_handovers = 0;
 
@@ -2719,16 +2722,16 @@ legend_labels = [legend_labels, {'Primary Tracker', 'Secondary Tracker', 'Interc
 
 legend(legend_handles, legend_labels, 'Location', 'northeastoutside');
 
-% fprintf('\n=== three TARGET SIMULATION COMPLETE ===\n');
-% fprintf('Enhanced FSM-based three target cooperative tracking simulation finished.\n');
-% fprintf('Key three target features implemented:\n');
+% fprintf('\n=== MULTIPLE TARGET SIMULATION COMPLETE ===\n');
+% fprintf('Enhanced FSM-based multiple target cooperative tracking simulation finished.\n');
+% fprintf('Key multiple target features implemented:\n');
 % fprintf('- Independent target movement with separate waypoint trajectories\n');
 % fprintf('- Per-target EKF tracking and loss prediction\n');
 % fprintf('- Competitive bidding system with conflict resolution\n');
 % fprintf('- Target-specific interceptor assignment (nearest gets first 2, farthest gets next 2)\n');
 % fprintf('- Individual sensor target selection (nearest target preference)\n');
 % fprintf('- Per-target handover and replacement logic\n');
-% fprintf('- three target visualization with color coding\n');
+% fprintf('- multiple target visualization with color coding\n');
 
 %% Save persistent outputs
 fclose(fid);
