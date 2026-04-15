@@ -107,7 +107,7 @@ node_spacing = 8*a;     % Distance between nodes
 grid_size = 5;          % Grid size
 dt = 0.1;               % Time step (delta_ts)
 simulation_time = 75;   % Total simulation time
-% target_velocity = 1.0;  % Target speed (units/s)  % Remove global target_velocity, now handled per target
+% target_velocity = 1.0;  % Target speed (u  nits/s)  % Remove global target_velocity, now handled per target
 sensor_velocity = 0.75;  % Sensor tracking speed (units/s)
 randomness = 0.5;       % Target movement randomness
 update_frequency = 1;  % Display update frequency
@@ -119,6 +119,8 @@ EKF_VELOCITY_CONVERGENCE_THRESHOLD = 0.006;  % Velocity variance threshold (unit
 PREDICTION_STABILITY_THRESHOLD = 0.5;        % Time difference threshold (TUs)
 MIN_STABLE_PREDICTIONS = 2;                  % Need at least 2 consecutive stable predictions
 USE_MCMF_ASSIGNMENT = true;                  % V46 switch for A/B testing against legacy assignment
+SELECTION_HOLD_TIME = 0.2;                   % Collect near-simultaneous selection events before committing
+INTERCEPT_POINT_STALE_TIME = 0.2;            % Refresh stale intercept geometry before assignment commit
 
 % Grid dimensions (staggered hex grid, including sensor coverage radius)
 nx = grid_size;   % number of columns
@@ -153,34 +155,22 @@ noise = 0.01;
 
 waypoints_list = cell(num_targets, 1);
 
-% EXAMPLE 1
-waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
-waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
 
-% Different speeds per target
-target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
-% Different entry times
-target_start_time = [0.0, 0.0];  % Staggered entry times
+% Example 2
+% Same-direction trajectories with time lag
+waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];  % lower left to upper right
+waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
+
+target_velocities = [1.0, 1.0]; 
+% Add time lag control
+target_start_time = [0, 0.0];  % Target 2 starts 2 seconds later
 
 % Initialize with time lag - Target 2 starts later
 target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = waypoints_list{2}(1, :);
+target_positions(2, :) = [0, 0];  % Target 2 starts off-screen, will enter later
+target_trajectories{1} = target_positions(1, :);
+target_trajectories{2} = target_positions(2, :);
 
-
-% % EXAMPLE 2
-% % Same-direction trajectories with time lag
-% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];
-% % lower left to upper right
-% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
-
-% % Different speeds per target
-% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
-% % Different entry times
-% target_start_time = [0.0, 4.0];  % Staggered entry times
-
-% % Initialize with time lag - Target 2 starts later
-% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-% target_positions(2, :) = [-15, 0]; % Target 2 starts off-screen, will enter later
 
 
 target_trajectories{1} = target_positions(1, :);
@@ -200,6 +190,8 @@ interceptor_process_state = repmat({'NONE'}, num_targets, 1);  % Per-target proc
 interceptor_process_data = cell(num_targets, 1);              % Per-target process data
 interceptor_bids = zeros(num_nodes, num_targets);              % Bids per sensor per target
 interceptor_valid_bidders = cell(num_targets, 1);             % Valid bidders per target
+pending_selection_start_time = nan(num_targets, 1);           % When each target entered PENDING_SELECTION
+interceptor_target_owner = zeros(num_nodes, 1);               % Target currently owning each interceptor assignment
 
 % NEW: Global storage for plotting per target
 global_interceptor_data = cell(num_targets, 1);  % Store for plotting later
@@ -287,7 +279,9 @@ params = struct('a', a, 'node_spacing', node_spacing, 'dt', dt, ...
     'PREDICTION_STABILITY_THRESHOLD', PREDICTION_STABILITY_THRESHOLD, ...
     'MIN_STABLE_PREDICTIONS', MIN_STABLE_PREDICTIONS, ...
     'SAFETY_MARGIN', SAFETY_MARGIN, 'rng_seed', 0, ...
-    'USE_MCMF_ASSIGNMENT', USE_MCMF_ASSIGNMENT);
+    'USE_MCMF_ASSIGNMENT', USE_MCMF_ASSIGNMENT, ...
+    'SELECTION_HOLD_TIME', SELECTION_HOLD_TIME, ...
+    'INTERCEPT_POINT_STALE_TIME', INTERCEPT_POINT_STALE_TIME);
 
 % Track covariance history for analysis
 covariance_history = struct();
@@ -646,6 +640,10 @@ for t = 1:simulation_time/dt
                         sensor_ekf_states{i, target_id} = [noisy_detection'; 0; 0];  % Position + zero velocity
                         sensor_P_matrices{i, target_id} = eye(4);
                         sensor_P_trace_history{i, target_id} = [current_time, trace(sensor_P_matrices{i, target_id})];
+                        previous_loss_predictions(i, target_id) = 0;
+                        stable_prediction_counts(i, target_id) = 0;
+                        individual_loss_predictions(i, target_id) = 0;
+                        loss_prediction_points{i, target_id} = [];
                     end
                 end
             end
@@ -785,6 +783,7 @@ for t = 1:simulation_time/dt
                 % Start the multi-step process for this target
                 interceptor_process_state{target_id} = 'PENDING_BROADCAST';
                 interceptor_process_delay(target_id) = 0;  % 2 time steps processing delay
+                pending_selection_start_time(target_id) = nan;
                 
                 interceptor_call_counter = interceptor_call_counter + 1;
                 
@@ -802,7 +801,8 @@ for t = 1:simulation_time/dt
                                                            'loss_time', earliest_loss_time, ...
                                                            'intercept_point', safe_intercept_point, ...
                                                            'target_position', ekf_target_position, ...
-                                                           'loss_point', loss_point);
+                                                           'loss_point', loss_point, ...
+                                                           'computed_time', current_time);
                 
                 % Store globally for plotting
                 global_interceptor_data{target_id} = interceptor_process_data{target_id};
@@ -827,6 +827,7 @@ for t = 1:simulation_time/dt
                     
                 case 'PENDING_BIDDING'
                     interceptor_process_state{target_id} = 'PENDING_SELECTION';
+                    pending_selection_start_time(target_id) = current_time;
                     
                     % Each sensor calculates its own bid for this target
                     interceptor_bids(:, target_id) = zeros(num_nodes, 1);
@@ -867,177 +868,321 @@ for t = 1:simulation_time/dt
                     
                 case 'PENDING_SELECTION'
 
-                    fprintf(fid, '[t=%5.2f][BIDDING] Target %d: PENDING_SELECTION with %d valid bidders: [%s]\n', ...
-                        current_time, target_id, length(interceptor_valid_bidders{target_id}), ...
-                        num2str(interceptor_valid_bidders{target_id}'));
-
-                    interceptor_process_state{target_id} = 'NONE';
-                    
-                    % Get current interceptors before selection
-                    current_interceptors = find(cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
-                    
-                    other_targets_calling = [];
-                    for other_tid = 1:num_targets
-                        if other_tid ~= target_id && strcmp(interceptor_process_state{other_tid}, 'PENDING_SELECTION')
-                            other_targets_calling = [other_targets_calling; other_tid];
-                        end
-                    end
-                    
-                    fprintf(fid, '[t=%5.2f][CONFLICT] Target %d: other_targets_calling = [%s]\n', ...
-                       current_time, target_id, num2str(other_targets_calling'));
-                    all_calling_targets = [target_id; other_targets_calling];
-                    [available_sensors, assignment_cost_matrix] = buildAssignmentCostMatrixForCallingTargets( ...
-                        all_calling_targets, num_nodes, num_targets, active_trackers, node_positions, ...
-                        original_positions, interceptor_process_data, sensor_ekf_states, ...
-                        sensor_detection_times, current_time, communication_range, ...
-                        wsn_width, wsn_height);
-
-                    fprintf(fid, '[t=%5.2f][BID_COST] targets=[%s] columns=target_ids candidates=%d\n', ...
-                        current_time, num2str(all_calling_targets'), length(available_sensors));
-                    for bid_row = 1:length(available_sensors)
-                        cost_values = sprintf(' %.6f', assignment_cost_matrix(bid_row, :));
-                        fprintf(fid, '[t=%5.2f][BID_COST] sensor=%d costs=[%s]\n', ...
-                            current_time, available_sensors(bid_row), strtrim(cost_values));
+                    if isnan(pending_selection_start_time(target_id))
+                        pending_selection_start_time(target_id) = current_time;
                     end
 
-                    [legacy_assignments, legacy_info] = solveInterceptorAssignments( ...
-                        all_calling_targets, available_sensors, assignment_cost_matrix, ...
-                        MAX_ACTIVE_TRACKERS, false);
-                    [mcmf_assignments, mcmf_info] = solveInterceptorAssignments( ...
-                        all_calling_targets, available_sensors, assignment_cost_matrix, ...
-                        MAX_ACTIVE_TRACKERS, true);
+                    selection_hold_elapsed = current_time - pending_selection_start_time(target_id);
+                    pending_targets = find(cellfun(@(state) strcmp(state, 'PENDING_SELECTION'), interceptor_process_state));
 
-                    fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] LEGACY targets=[%s] ' ...
-                        'requested=%d assigned=%d total_cost=%.6f\n'], ...
-                        current_time, num2str(all_calling_targets'), ...
-                        legacy_info.requested_slots_total, legacy_info.assigned_slots_total, ...
-                        legacy_info.total_cost);
-                    for compare_idx = 1:length(all_calling_targets)
-                        fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] LEGACY Target %d: ' ...
-                            'team=[%s], team_cost=%.6f\n'], ...
-                            current_time, all_calling_targets(compare_idx), ...
-                            num2str(legacy_assignments{compare_idx}), ...
-                            legacy_info.assignment_costs_per_target(compare_idx));
-                    end
+                    if selection_hold_elapsed + 1e-9 < SELECTION_HOLD_TIME
+                        fprintf(fid, ['[t=%5.2f][SELECTION_HOLD] Target %d: elapsed=%.2f, ' ...
+                            'remaining=%.2f, pending_targets=[%s]\n'], ...
+                            current_time, target_id, selection_hold_elapsed, ...
+                            SELECTION_HOLD_TIME - selection_hold_elapsed, num2str(pending_targets'));
+                    else
+                        other_targets_calling = pending_targets(pending_targets ~= target_id);
+                        all_calling_targets = [target_id; other_targets_calling(:)];
 
-                    fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] MCMF targets=[%s] ' ...
-                        'requested=%d assigned=%d total_cost=%.6f\n'], ...
-                        current_time, num2str(all_calling_targets'), ...
-                        mcmf_info.requested_slots_total, mcmf_info.assigned_slots_total, ...
-                        mcmf_info.total_cost);
-                    for compare_idx = 1:length(all_calling_targets)
-                        fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] MCMF Target %d: ' ...
-                            'team=[%s], team_cost=%.6f\n'], ...
-                            current_time, all_calling_targets(compare_idx), ...
-                            num2str(mcmf_assignments{compare_idx}), ...
-                            mcmf_info.assignment_costs_per_target(compare_idx));
-                    end
-
-                    [selected_assignments, assignment_info] = solveInterceptorAssignments( ...
-                        all_calling_targets, available_sensors, assignment_cost_matrix, ...
-                        MAX_ACTIVE_TRACKERS, USE_MCMF_ASSIGNMENT);
-
-                    fprintf(fid, ['[t=%5.2f][ASSIGN] %s selected for targets [%s] with %d candidates, ' ...
-                        'requested=%d, assigned=%d, total_cost=%.3f\n'], ...
-                        current_time, assignment_info.algorithm, num2str(all_calling_targets'), ...
-                        length(available_sensors), assignment_info.requested_slots_total, ...
-                        assignment_info.assigned_slots_total, assignment_info.total_cost);
-
-                    new_assignment_event = struct( ...
-                        'time', current_time, ...
-                        'algorithm', assignment_info.algorithm, ...
-                        'calling_targets', all_calling_targets', ...
-                        'candidate_sensors', available_sensors', ...
-                        'requested_slots_per_target', MAX_ACTIVE_TRACKERS, ...
-                        'assigned_slots_per_target', assignment_info.assigned_slots_per_target', ...
-                        'assigned_slots_total', assignment_info.assigned_slots_total, ...
-                        'assignments', {selected_assignments}, ...
-                        'total_cost', assignment_info.total_cost, ...
-                        'cost_matrix', assignment_cost_matrix);
-                    assignment_events(end+1) = new_assignment_event;
-
-                    for j = 1:length(all_calling_targets)
-                        calling_tid = all_calling_targets(j);
-                        selected_team = selected_assignments{j};
-
-                        if isempty(selected_team)
-                            fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: no interceptors assigned in this round\n', ...
-                                current_time, calling_tid);
-                            continue;
+                        for log_idx = 1:length(all_calling_targets)
+                            calling_tid = all_calling_targets(log_idx);
+                            fprintf(fid, '[t=%5.2f][BIDDING] Target %d: PENDING_SELECTION with %d valid bidders: [%s]\n', ...
+                                current_time, calling_tid, length(interceptor_valid_bidders{calling_tid}), ...
+                                num2str(interceptor_valid_bidders{calling_tid}'));
                         end
 
-                        if length(all_calling_targets) == 1
-                            losing_interceptors = setdiff(current_interceptors, selected_team);
+                        fprintf(fid, '[t=%5.2f][CONFLICT] Target %d: other_targets_calling = [%s]\n', ...
+                           current_time, target_id, num2str(other_targets_calling'));
 
-                            for losing_interceptor = losing_interceptors'
-                                is_working_other_target = false;
-                                for tid = 1:num_targets
-                                    if tid ~= calling_tid && length(losing_interceptor) == 1 && losing_interceptor > 0 && losing_interceptor <= num_nodes && ...
-                                       ~isempty(proactive_targets) && length(proactive_targets) >= losing_interceptor && ...
-                                       ~isempty(proactive_targets{losing_interceptor})
-                                        for other_tid = 1:num_targets
-                                            if other_tid ~= calling_tid && ~isempty(global_interceptor_data{other_tid}) && ...
-                                               isfield(global_interceptor_data{other_tid}, 'intercept_point')
-                                                other_intercept = global_interceptor_data{other_tid}.intercept_point;
-                                                if norm(proactive_targets{losing_interceptor} - other_intercept) < 1.0
-                                                    is_working_other_target = true;
-                                                    break;
-                                                end
-                                            end
+                        for refresh_idx = 1:length(all_calling_targets)
+                            calling_tid = all_calling_targets(refresh_idx);
+                            if isempty(interceptor_process_data{calling_tid})
+                                fprintf(fid, '[t=%5.2f][REFRESH] Target %d: kept intercept point, age=NaN, reason=no_process_data\n', ...
+                                    current_time, calling_tid);
+                                continue;
+                            end
+
+                            if ~isfield(interceptor_process_data{calling_tid}, 'computed_time')
+                                interceptor_process_data{calling_tid}.computed_time = interceptor_call_time(calling_tid);
+                            end
+
+                            intercept_age = current_time - interceptor_process_data{calling_tid}.computed_time;
+                            if intercept_age + 1e-9 >= INTERCEPT_POINT_STALE_TIME
+                                refresh_predictor = -1;
+                                refresh_loss_time = inf;
+                                refresh_loss_point = [];
+                                refresh_active_trackers = active_trackers{calling_tid};
+
+                                for tracker_id = refresh_active_trackers(:)'
+                                    refresh_ekf_converged = false;
+                                    if tracker_id > 0 && tracker_id <= num_nodes && ...
+                                       ~isempty(sensor_P_matrices{tracker_id, calling_tid})
+                                        refresh_ekf_converged = isEKFConverged( ...
+                                            sensor_P_matrices{tracker_id, calling_tid}, ...
+                                            EKF_VELOCITY_CONVERGENCE_THRESHOLD);
+                                    end
+
+                                    if tracker_id > 0 && tracker_id <= num_nodes && ...
+                                       refresh_ekf_converged && ...
+                                       stable_prediction_counts(tracker_id, calling_tid) >= MIN_STABLE_PREDICTIONS && ...
+                                       ~isempty(sensor_ekf_states{tracker_id, calling_tid})
+                                        refresh_target_position = sensor_ekf_states{tracker_id, calling_tid}(1:2)';
+                                        refresh_target_velocity = sensor_ekf_states{tracker_id, calling_tid}(3:4)';
+                                        [candidate_loss_time, candidate_loss_point] = predictTrackerLoss(tracker_id, current_time, ...
+                                            node_positions(tracker_id,:), refresh_target_position, refresh_target_velocity, a);
+
+                                        if isfinite(candidate_loss_time) && candidate_loss_time < refresh_loss_time
+                                            refresh_predictor = tracker_id;
+                                            refresh_loss_time = candidate_loss_time;
+                                            refresh_loss_point = candidate_loss_point;
                                         end
                                     end
                                 end
 
-                                if ~is_working_other_target && ~isempty(losing_interceptor) && losing_interceptor > 0 && losing_interceptor <= num_nodes
-                                    sensor_states{losing_interceptor} = SENSOR_STATES.RETURNING_HOME;
-                                    sensor_roles{losing_interceptor} = SENSOR_ROLES.NONE;
-                                    sensors_returning_home = [sensors_returning_home; losing_interceptor];
-                                    proactive_targets{losing_interceptor} = [];
+                                if refresh_predictor ~= -1
+                                    old_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
+                                    refresh_target_position = sensor_ekf_states{refresh_predictor, calling_tid}(1:2)';
+                                    new_intercept_point = applySafetyMargin(refresh_target_position, refresh_loss_point, SAFETY_MARGIN);
 
-                                    logStateTransition(losing_interceptor, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.RETURNING_HOME, ...
-                                        SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.NONE, current_time, ...
-                                        'Lost rebidding process - returning home');
+                                    interceptor_process_data{calling_tid}.predictor_id = refresh_predictor;
+                                    interceptor_process_data{calling_tid}.loss_time = refresh_loss_time;
+                                    interceptor_process_data{calling_tid}.intercept_point = new_intercept_point;
+                                    interceptor_process_data{calling_tid}.target_position = refresh_target_position;
+                                    interceptor_process_data{calling_tid}.loss_point = refresh_loss_point;
+                                    interceptor_process_data{calling_tid}.computed_time = current_time;
+                                    global_interceptor_data{calling_tid} = interceptor_process_data{calling_tid};
+
+                                    event_idx = find([interceptor_events.target_id] == calling_tid, 1, 'last');
+                                    if ~isempty(event_idx)
+                                        interceptor_events(event_idx).predictor_sensor = refresh_predictor;
+                                        interceptor_events(event_idx).intercept_point = new_intercept_point;
+                                        interceptor_events(event_idx).loss_time = refresh_loss_time;
+                                    end
+
+                                    fprintf(fid, ['[t=%5.2f][REFRESH] Target %d: refreshed intercept point, ' ...
+                                        'age=%.2f, old=[%.2f,%.2f], new=[%.2f,%.2f], predictor=%d, loss_time=%.2f\n'], ...
+                                        current_time, calling_tid, intercept_age, ...
+                                        old_intercept_point(1), old_intercept_point(2), ...
+                                        new_intercept_point(1), new_intercept_point(2), ...
+                                        refresh_predictor, refresh_loss_time);
+                                else
+                                    fprintf(fid, ['[t=%5.2f][REFRESH] Target %d: kept intercept point, ' ...
+                                        'age=%.2f, reason=no_valid_prediction\n'], ...
+                                        current_time, calling_tid, intercept_age);
+                                end
+                            else
+                                fprintf(fid, '[t=%5.2f][REFRESH] Target %d: kept intercept point, age=%.2f\n', ...
+                                    current_time, calling_tid, intercept_age);
+                            end
+                        end
+
+                        % Get current interceptors before selection
+                        current_interceptors = find(cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
+
+                        [available_sensors, assignment_cost_matrix] = buildAssignmentCostMatrixForCallingTargets( ...
+                            all_calling_targets, num_nodes, num_targets, active_trackers, node_positions, ...
+                            original_positions, interceptor_process_data, sensor_ekf_states, ...
+                            sensor_detection_times, current_time, communication_range, ...
+                            wsn_width, wsn_height);
+
+                        fprintf(fid, '[t=%5.2f][BID_COST] targets=[%s] columns=target_ids candidates=%d\n', ...
+                            current_time, num2str(all_calling_targets'), length(available_sensors));
+                        for bid_row = 1:length(available_sensors)
+                            cost_values = sprintf(' %.6f', assignment_cost_matrix(bid_row, :));
+                            fprintf(fid, '[t=%5.2f][BID_COST] sensor=%d costs=[%s]\n', ...
+                                current_time, available_sensors(bid_row), strtrim(cost_values));
+                        end
+
+                        [legacy_assignments, legacy_info] = solveInterceptorAssignments( ...
+                            all_calling_targets, available_sensors, assignment_cost_matrix, ...
+                            MAX_ACTIVE_TRACKERS, false);
+                        [mcmf_assignments, mcmf_info] = solveInterceptorAssignments( ...
+                            all_calling_targets, available_sensors, assignment_cost_matrix, ...
+                            MAX_ACTIVE_TRACKERS, true);
+
+                        fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] LEGACY targets=[%s] ' ...
+                            'requested=%d assigned=%d total_cost=%.6f\n'], ...
+                            current_time, num2str(all_calling_targets'), ...
+                            legacy_info.requested_slots_total, legacy_info.assigned_slots_total, ...
+                            legacy_info.total_cost);
+                        for compare_idx = 1:length(all_calling_targets)
+                            fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] LEGACY Target %d: ' ...
+                                'team=[%s], team_cost=%.6f\n'], ...
+                                current_time, all_calling_targets(compare_idx), ...
+                                num2str(legacy_assignments{compare_idx}), ...
+                                legacy_info.assignment_costs_per_target(compare_idx));
+                        end
+
+                        fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] MCMF targets=[%s] ' ...
+                            'requested=%d assigned=%d total_cost=%.6f\n'], ...
+                            current_time, num2str(all_calling_targets'), ...
+                            mcmf_info.requested_slots_total, mcmf_info.assigned_slots_total, ...
+                            mcmf_info.total_cost);
+                        for compare_idx = 1:length(all_calling_targets)
+                            fprintf(fid, ['[t=%5.2f][ASSIGN_COMPARE] MCMF Target %d: ' ...
+                                'team=[%s], team_cost=%.6f\n'], ...
+                                current_time, all_calling_targets(compare_idx), ...
+                                num2str(mcmf_assignments{compare_idx}), ...
+                                mcmf_info.assignment_costs_per_target(compare_idx));
+                        end
+
+                        [selected_assignments, assignment_info] = solveInterceptorAssignments( ...
+                            all_calling_targets, available_sensors, assignment_cost_matrix, ...
+                            MAX_ACTIVE_TRACKERS, USE_MCMF_ASSIGNMENT);
+
+                        fprintf(fid, ['[t=%5.2f][ASSIGN] %s selected for targets [%s] with %d candidates, ' ...
+                            'requested=%d, assigned=%d, total_cost=%.3f\n'], ...
+                            current_time, assignment_info.algorithm, num2str(all_calling_targets'), ...
+                            length(available_sensors), assignment_info.requested_slots_total, ...
+                            assignment_info.assigned_slots_total, assignment_info.total_cost);
+
+                        new_assignment_event = struct( ...
+                            'time', current_time, ...
+                            'algorithm', assignment_info.algorithm, ...
+                            'calling_targets', all_calling_targets', ...
+                            'candidate_sensors', available_sensors', ...
+                            'requested_slots_per_target', MAX_ACTIVE_TRACKERS, ...
+                            'assigned_slots_per_target', assignment_info.assigned_slots_per_target', ...
+                            'assigned_slots_total', assignment_info.assigned_slots_total, ...
+                            'assignments', {selected_assignments}, ...
+                            'total_cost', assignment_info.total_cost, ...
+                            'cost_matrix', assignment_cost_matrix);
+                        assignment_events(end+1) = new_assignment_event;
+
+                        for j = 1:length(all_calling_targets)
+                            calling_tid = all_calling_targets(j);
+                            selected_team = selected_assignments{j};
+
+                            if isempty(selected_team)
+                                fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: no interceptors assigned in this round\n', ...
+                                    current_time, calling_tid);
+                                continue;
+                            end
+
+                            if length(all_calling_targets) == 1
+                                losing_interceptors = setdiff(current_interceptors, selected_team);
+
+                                for losing_interceptor = losing_interceptors'
+                                    is_working_other_target = false;
+                                    for tid = 1:num_targets
+                                        if tid ~= calling_tid && length(losing_interceptor) == 1 && losing_interceptor > 0 && losing_interceptor <= num_nodes && ...
+                                           ~isempty(proactive_targets) && length(proactive_targets) >= losing_interceptor && ...
+                                           ~isempty(proactive_targets{losing_interceptor})
+                                            for other_tid = 1:num_targets
+                                                if other_tid ~= calling_tid && ~isempty(global_interceptor_data{other_tid}) && ...
+                                                   isfield(global_interceptor_data{other_tid}, 'intercept_point')
+                                                    other_intercept = global_interceptor_data{other_tid}.intercept_point;
+                                                    if norm(proactive_targets{losing_interceptor} - other_intercept) < 1.0
+                                                        is_working_other_target = true;
+                                                        break;
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+
+                                    if ~is_working_other_target && ~isempty(losing_interceptor) && losing_interceptor > 0 && losing_interceptor <= num_nodes
+                                        old_owner = interceptor_target_owner(losing_interceptor);
+                                        old_target_point = proactive_targets{losing_interceptor};
+                                        sensor_states{losing_interceptor} = SENSOR_STATES.RETURNING_HOME;
+                                        sensor_roles{losing_interceptor} = SENSOR_ROLES.NONE;
+                                        sensors_returning_home = [sensors_returning_home; losing_interceptor];
+                                        proactive_targets{losing_interceptor} = [];
+                                        interceptor_target_owner(losing_interceptor) = 0;
+
+                                        logStateTransition(losing_interceptor, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.RETURNING_HOME, ...
+                                            SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.NONE, current_time, ...
+                                            'Lost rebidding process - returning home');
+                                        if old_owner > 0 && ~isempty(old_target_point)
+                                            fprintf(fid, ['[t=%5.2f][OWNER] Sensor %d: cleared owner target %d, ' ...
+                                                'old_point=[%.2f,%.2f], reason=lost_rebidding\n'], ...
+                                                current_time, losing_interceptor, old_owner, ...
+                                                old_target_point(1), old_target_point(2));
+                                        end
+                                    end
                                 end
                             end
-                        end
 
-                        safe_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
+                            safe_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
 
-                        for winner = selected_team
-                            if ismember(winner, current_interceptors)
-                                proactive_targets{winner} = safe_intercept_point;
+                            for winner = selected_team
+                                if ismember(winner, current_interceptors)
+                                    old_owner = interceptor_target_owner(winner);
+                                    old_target_point = proactive_targets{winner};
+                                    if old_owner > 0 && old_owner ~= calling_tid
+                                        old_owner_remaining = sum(interceptor_target_owner == old_owner & ...
+                                            cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
+                                        old_owner_remaining = max(0, old_owner_remaining - 1);
+                                        if ~isempty(old_target_point)
+                                            fprintf(fid, ['[t=%5.2f][PREEMPT] Sensor %d: target %d -> target %d, ' ...
+                                                'old_point=[%.2f,%.2f], new_point=[%.2f,%.2f], ' ...
+                                                'old_target_remaining_interceptors=%d\n'], ...
+                                                current_time, winner, old_owner, calling_tid, ...
+                                                old_target_point(1), old_target_point(2), ...
+                                                safe_intercept_point(1), safe_intercept_point(2), ...
+                                                old_owner_remaining);
+                                        else
+                                            fprintf(fid, ['[t=%5.2f][PREEMPT] Sensor %d: target %d -> target %d, ' ...
+                                                'old_point=[], new_point=[%.2f,%.2f], ' ...
+                                                'old_target_remaining_interceptors=%d\n'], ...
+                                                current_time, winner, old_owner, calling_tid, ...
+                                                safe_intercept_point(1), safe_intercept_point(2), ...
+                                                old_owner_remaining);
+                                        end
+                                    elseif old_owner == calling_tid && ~isempty(old_target_point) && ...
+                                           norm(old_target_point - safe_intercept_point) > 1e-6
+                                        fprintf(fid, ['[t=%5.2f][RETARGET] Sensor %d: target %d point updated, ' ...
+                                            'old_point=[%.2f,%.2f], new_point=[%.2f,%.2f]\n'], ...
+                                            current_time, winner, calling_tid, ...
+                                            old_target_point(1), old_target_point(2), ...
+                                            safe_intercept_point(1), safe_intercept_point(2));
+                                    elseif old_owner == 0
+                                        fprintf(fid, ['[t=%5.2f][OWNER] Sensor %d: existing interceptor claimed by ' ...
+                                            'target %d, new_point=[%.2f,%.2f]\n'], ...
+                                            current_time, winner, calling_tid, ...
+                                            safe_intercept_point(1), safe_intercept_point(2));
+                                    end
+                                    proactive_targets{winner} = safe_intercept_point;
+                                    interceptor_target_owner(winner) = calling_tid;
+                                else
+                                    old_state = sensor_states{winner};
+                                    old_role = sensor_roles{winner};
+                                    sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
+                                    sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
+                                    proactive_targets{winner} = safe_intercept_point;
+                                    interceptor_target_owner(winner) = calling_tid;
+
+                                    logStateTransition(winner, old_state, SENSOR_STATES.INTERCEPTING, ...
+                                        old_role, SENSOR_ROLES.INTERCEPTOR_CANDIDATE, current_time, ...
+                                        sprintf('%s assignment for target %d', assignment_info.algorithm, calling_tid));
+                                    fprintf(fid, ['[t=%5.2f][OWNER] Sensor %d: owner=target %d, ' ...
+                                        'point=[%.2f,%.2f], reason=new_assignment\n'], ...
+                                        current_time, winner, calling_tid, ...
+                                        safe_intercept_point(1), safe_intercept_point(2));
+                                end
+                            end
+
+                            interceptor_call_triggered(calling_tid) = true;
+                            interceptor_call_time(calling_tid) = current_time;
+
+                            event_idx = find([interceptor_events.target_id] == calling_tid, 1, 'last');
+                            if ~isempty(event_idx)
+                                interceptor_events(event_idx).selected_sensors = selected_team;
+                            end
+
+                            if length(selected_team) < MAX_ACTIVE_TRACKERS
+                                fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: shortage, assigned %d of %d requested interceptors\n', ...
+                                    current_time, calling_tid, length(selected_team), MAX_ACTIVE_TRACKERS);
                             else
-                                old_state = sensor_states{winner};
-                                old_role = sensor_roles{winner};
-                                sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
-                                sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
-                                proactive_targets{winner} = safe_intercept_point;
-
-                                logStateTransition(winner, old_state, SENSOR_STATES.INTERCEPTING, ...
-                                    old_role, SENSOR_ROLES.INTERCEPTOR_CANDIDATE, current_time, ...
-                                    sprintf('%s assignment for target %d', assignment_info.algorithm, calling_tid));
+                                fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: assigned interceptors [%s]\n', ...
+                                    current_time, calling_tid, num2str(selected_team));
                             end
                         end
 
-                        interceptor_call_triggered(calling_tid) = true;
-                        interceptor_call_time(calling_tid) = current_time;
-
-                        event_idx = find([interceptor_events.target_id] == calling_tid, 1, 'last');
-                        if ~isempty(event_idx)
-                            interceptor_events(event_idx).selected_sensors = selected_team;
+                        for completed_tid = all_calling_targets'
+                            interceptor_process_state{completed_tid} = 'NONE';
+                            pending_selection_start_time(completed_tid) = nan;
                         end
-
-                        if length(selected_team) < MAX_ACTIVE_TRACKERS
-                            fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: shortage, assigned %d of %d requested interceptors\n', ...
-                                current_time, calling_tid, length(selected_team), MAX_ACTIVE_TRACKERS);
-                        else
-                            fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: assigned interceptors [%s]\n', ...
-                                current_time, calling_tid, num2str(selected_team));
-                        end
-                    end
-
-                    for other_tid = other_targets_calling'
-                        interceptor_process_state{other_tid} = 'NONE';
                     end
             end
         end
@@ -1246,6 +1391,10 @@ for t = 1:simulation_time/dt
                             sensor_ekf_states{new_detector, target_id} = [target_positions(target_id, 1); target_positions(target_id, 2); 0; 0];
                             sensor_P_matrices{new_detector, target_id} = eye(4);
                             sensor_P_trace_history{new_detector, target_id} = [current_time, trace(sensor_P_matrices{new_detector, target_id})];
+                            previous_loss_predictions(new_detector, target_id) = 0;
+                            stable_prediction_counts(new_detector, target_id) = 0;
+                            individual_loss_predictions(new_detector, target_id) = 0;
+                            loss_prediction_points{new_detector, target_id} = [];
                             
                             logStateTransition(new_detector, prev_sensor_states{new_detector}, SENSOR_STATES.TRACKING, ...
                                 SENSOR_ROLES.NONE, sensor_roles{new_detector}, current_time, ...
@@ -1272,6 +1421,10 @@ for t = 1:simulation_time/dt
                             sensor_ekf_states{new_detector, target_id} = [target_positions(target_id, 1); target_positions(target_id, 2); 0; 0];
                             sensor_P_matrices{new_detector, target_id} = eye(4);
                             sensor_P_trace_history{new_detector, target_id} = [current_time, trace(sensor_P_matrices{new_detector, target_id})];
+                            previous_loss_predictions(new_detector, target_id) = 0;
+                            stable_prediction_counts(new_detector, target_id) = 0;
+                            individual_loss_predictions(new_detector, target_id) = 0;
+                            loss_prediction_points{new_detector, target_id} = [];
                             
                             logStateTransition(new_detector, prev_sensor_states{new_detector}, SENSOR_STATES.TRACKING, ...
                                 SENSOR_ROLES.NONE, sensor_roles{new_detector}, current_time, ...
@@ -1313,6 +1466,10 @@ for t = 1:simulation_time/dt
                             sensor_ekf_states{i, detected_target_id} = [target_positions(detected_target_id, 1); target_positions(detected_target_id, 2); 0; 0];
                             sensor_P_matrices{i, detected_target_id} = eye(4);
                             sensor_P_trace_history{i, detected_target_id} = [current_time, trace(sensor_P_matrices{i, detected_target_id})];
+                            previous_loss_predictions(i, detected_target_id) = 0;
+                            stable_prediction_counts(i, detected_target_id) = 0;
+                            individual_loss_predictions(i, detected_target_id) = 0;
+                            loss_prediction_points{i, detected_target_id} = [];
                         end
                         
                         % Transition to tracking
@@ -1474,10 +1631,21 @@ for t = 1:simulation_time/dt
                             sensor_ekf_states{i, detected_target_id} = [target_positions(detected_target_id, 1); target_positions(detected_target_id, 2); 0; 0];
                             sensor_P_matrices{i, detected_target_id} = eye(4);
                             sensor_P_trace_history{i, detected_target_id} = [current_time, trace(sensor_P_matrices{i, detected_target_id})];
+                            previous_loss_predictions(i, detected_target_id) = 0;
+                            stable_prediction_counts(i, detected_target_id) = 0;
+                            individual_loss_predictions(i, detected_target_id) = 0;
+                            loss_prediction_points{i, detected_target_id} = [];
                             
                             logStateTransition(i, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.TRACKING, ...
                                 SENSOR_ROLES.INTERCEPTOR_CANDIDATE, sensor_roles{i}, current_time, ...
                                 sprintf('1-for-1 interceptor became tracker - target %d', detected_target_id));
+                            if interceptor_target_owner(i) > 0
+                                fprintf(fid, ['[t=%5.2f][OWNER] Sensor %d: cleared owner target %d, ' ...
+                                    'reason=interceptor_became_tracker_target_%d\n'], ...
+                                    current_time, i, interceptor_target_owner(i), detected_target_id);
+                            end
+                            interceptor_target_owner(i) = 0;
+                            proactive_targets{i} = [];
     
                             total_successful_intercepts = total_successful_intercepts + 1;
     
@@ -1513,10 +1681,21 @@ for t = 1:simulation_time/dt
                                 sensor_ekf_states{i, detected_target_id} = [target_positions(detected_target_id, 1); target_positions(detected_target_id, 2); 0; 0];
                                 sensor_P_matrices{i, detected_target_id} = eye(4);
                                 sensor_P_trace_history{i, detected_target_id} = [current_time, trace(sensor_P_matrices{i, detected_target_id})];
+                                previous_loss_predictions(i, detected_target_id) = 0;
+                                stable_prediction_counts(i, detected_target_id) = 0;
+                                individual_loss_predictions(i, detected_target_id) = 0;
+                                loss_prediction_points{i, detected_target_id} = [];
                                 
                                 logStateTransition(i, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.TRACKING, ...
                                     SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.PRIMARY_TRACKER, current_time, ...
                                     sprintf('2-for-2 interceptor became primary tracker - target %d', detected_target_id));
+                                if interceptor_target_owner(i) > 0
+                                    fprintf(fid, ['[t=%5.2f][OWNER] Sensor %d: cleared owner target %d, ' ...
+                                        'reason=interceptor_became_tracker_target_%d\n'], ...
+                                        current_time, i, interceptor_target_owner(i), detected_target_id);
+                                end
+                                interceptor_target_owner(i) = 0;
+                                proactive_targets{i} = [];
     
                                 total_successful_intercepts = total_successful_intercepts + 1;
 
@@ -1539,10 +1718,18 @@ for t = 1:simulation_time/dt
                                     sensors_returning_home = [sensors_returning_home; i];
                                 end
                                 
+                                old_owner = interceptor_target_owner(i);
+                                old_target_point = proactive_targets{i};
                                 proactive_targets{i} = [];
+                                interceptor_target_owner(i) = 0;
                                 
                                 logStateTransition(i, prev_state, sensor_states{i}, prev_role, sensor_roles{i}, ...
                                     current_time, 'Reached intercept point but no target detected - returning home');
+                                if old_owner > 0 && ~isempty(old_target_point)
+                                    fprintf(fid, ['[t=%5.2f][OWNER] Sensor %d: cleared owner target %d, ' ...
+                                        'old_point=[%.2f,%.2f], reason=reached_intercept_without_detection\n'], ...
+                                        current_time, i, old_owner, old_target_point(1), old_target_point(2));
+                                end
                             end
                         else
                             sensor_states{i} = SENSOR_STATES.RETURNING_HOME;
@@ -1565,10 +1752,18 @@ for t = 1:simulation_time/dt
                                 sensors_returning_home = [sensors_returning_home; i];
                             end
                             
+                            old_owner = interceptor_target_owner(i);
+                            old_target_point = proactive_targets{i};
                             proactive_targets{i} = [];
+                            interceptor_target_owner(i) = 0;
                             
                             logStateTransition(i, prev_state, sensor_states{i}, prev_role, sensor_roles{i}, ...
                                 current_time, 'Reached intercept point but no target detected - returning home');
+                            if old_owner > 0 && ~isempty(old_target_point)
+                                fprintf(fid, ['[t=%5.2f][OWNER] Sensor %d: cleared owner target %d, ' ...
+                                    'old_point=[%.2f,%.2f], reason=reached_intercept_without_detection\n'], ...
+                                    current_time, i, old_owner, old_target_point(1), old_target_point(2));
+                            end
                         end
                     end
                 end
@@ -1865,10 +2060,23 @@ for t = 1:simulation_time/dt
                             
                             if confidence <= 0.2
                                 % Low confidence - return home
+                                old_intercept_role = sensor_roles{i};
                                 sensor_states{i} = SENSOR_STATES.RETURNING_HOME;
                                 sensor_roles{i} = SENSOR_ROLES.NONE;
                                 sensors_returning_home = [sensors_returning_home; i];
+                                old_owner = interceptor_target_owner(i);
+                                old_target_point = proactive_targets{i};
                                 proactive_targets{i} = [];
+                                interceptor_target_owner(i) = 0;
+                                logStateTransition(i, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.RETURNING_HOME, ...
+                                    old_intercept_role, SENSOR_ROLES.NONE, current_time, ...
+                                    sprintf('Low shared confidence while intercepting target %d (confidence=%.2f)', ...
+                                    assigned_target_id, confidence));
+                                if old_owner > 0 && ~isempty(old_target_point)
+                                    fprintf(fid, ['[t=%5.2f][OWNER] Sensor %d: cleared owner target %d, ' ...
+                                        'old_point=[%.2f,%.2f], reason=low_shared_confidence\n'], ...
+                                        current_time, i, old_owner, old_target_point(1), old_target_point(2));
+                                end
                                 
                             elseif dot_product < 0 && confidence > 0.2
                                 % Target passed intercept - use shared information and PNG

@@ -141,18 +141,11 @@ sensor_roles = repmat({SENSOR_ROLES.NONE}, num_nodes, 1);
 sensor_state_history = cell(num_nodes, 1);
 
 % NEW: three target setup
-num_targets = 3;  % Or make this configurable
+num_targets = 2;  % Or make this configurable
 waypoints_list = cell(num_targets, 1);
-waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];
-waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692];
-waypoints_list{3} = [0,15; 15,20; 30,25; 45,30; 60,35; 70,40; 80,45];  % Third target path
-
-% Different speeds per target
-target_velocities = [1.0, 1.1, 1.2];  % Target 1: normal, Target 2: slower, Target 3: faster
-% target_velocities = [1.0, 1.3, 1.5];
-
-% Different entry times
-target_start_time = [0, 4.0, 6.5];  % Staggered entry times
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];
+% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692];
+% waypoints_list{3} = [0,15; 15,20; 30,25; 45,30; 60,35; 70,40; 80,45];  % Third target path
 
 % Target state arrays
 target_positions = zeros(num_targets, 2);
@@ -160,11 +153,39 @@ target_trajectories = cell(num_targets, 1);
 current_waypoint_idx = ones(num_targets, 1);
 noise = 0.01;
 
+
+waypoints_list = cell(num_targets, 1);
+
+% EXAMPLE 1
+waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
+
+% Different speeds per target
+target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% Different entry times
+target_start_time = [0.0, 0.0];  % Staggered entry times
+
 % Initialize with time lag - Target 2 starts later
 target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = [-15, 0];  % Target 2 starts off-screen, will enter later
+target_positions(2, :) = waypoints_list{2}(1, :);
 target_trajectories{1} = target_positions(1, :);
 target_trajectories{2} = target_positions(2, :);
+
+% % Same-direction trajectories with time lag
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];  % lower left to upper right
+% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
+
+% target_velocities = [1.0, 1.0]; 
+% % Add time lag control
+% target_start_time = [0, 4.0];  % Target 2 starts 2 seconds later
+
+% % Initialize with time lag - Target 2 starts later
+% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+% target_positions(2, :) = [-15, 0];  % Target 2 starts off-screen, will enter later
+% target_trajectories{1} = target_positions(1, :);
+% target_trajectories{2} = target_positions(2, :);
+
+
 
 % NEW: Prediction stability tracking per target
 previous_loss_predictions = zeros(num_nodes, num_targets);     % Track previous prediction for each sensor-target pair

@@ -54,6 +54,8 @@
 
 % V38_b: Interception logics is updated, no wobbling.
 
+% V46_Yeqi: 
+
 %
 
 close all; clc;
@@ -158,41 +160,35 @@ noise = 0.01;
 
 waypoints_list = cell(num_targets, 1);
 
-% % EXAMPLE 1
-% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
-% waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
+% EXAMPLE 1
+waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
 
-% % waypoint 1：y + 10
-% waypoints_list{1}(:,2) = waypoints_list{1}(:,2) + 10;
-
-% % waypoint 2：y - 10
-% waypoints_list{2}(:,2) = waypoints_list{2}(:,2) - 10;
-
-% % Different speeds per target
-% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
-% % Different entry times
-% target_start_time = [0.0, 0.0];  % Staggered entry times
-
-% % Initialize with time lag - Target 2 starts later
-% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-% target_positions(2, :) = waypoints_list{2}(1, :);
-% target_trajectories{1} = target_positions(1, :);
-% target_trajectories{2} = target_positions(2, :);
-
-% Example 2
-% Same-direction trajectories with time lag
-waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];  % lower left to upper right
-waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
-
-target_velocities = [1.0, 1.0]; 
-% Add time lag control
-target_start_time = [0, 0.0];  % Target 2 starts 2 seconds later
+% Different speeds per target
+target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% Different entry times
+target_start_time = [0.0, 0.0];  % Staggered entry times
 
 % Initialize with time lag - Target 2 starts later
 target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = [0, 0];  % Target 2 starts off-screen, will enter later
+target_positions(2, :) = waypoints_list{2}(1, :);
 target_trajectories{1} = target_positions(1, :);
 target_trajectories{2} = target_positions(2, :);
+
+% % Example 2
+% % Same-direction trajectories with time lag
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];  % lower left to upper right
+% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
+
+% target_velocities = [1.0, 1.0]; 
+% % Add time lag control
+% target_start_time = [0.0, 0.0];  % Target 2 starts 2 seconds later
+
+% % Initialize with time lag - Target 2 starts later
+% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+% target_positions(2, :) = [0, 0.2];  % Target 2 starts off-screen, will enter later
+% target_trajectories{1} = target_positions(1, :);
+% target_trajectories{2} = target_positions(2, :);
 
 
 
@@ -267,6 +263,7 @@ interceptor_call_triggered = false(num_targets, 1);          % Flag to ensure si
 sensor_interceptor_call_history = false(num_nodes, num_targets);
 
 interceptor_call_time = zeros(num_targets, 1);               % When interceptor call was made per target
+interceptor_assigned_target = zeros(num_nodes, 1);            % Explicit owner target for each INTERCEPTING sensor
 
 % NEW: Returning home logic
 sensors_returning_home = [];    % Sensors in RETURNING_HOME state
@@ -925,6 +922,82 @@ for t = 1:simulation_time/dt
                     fprintf(fid, '[t=%5.2f][CONFLICT] Target %d: other_targets_calling = [%s]\n', ...
                        current_time, target_id, num2str(other_targets_calling'));
                     all_calling_targets = [target_id; other_targets_calling];
+
+                    [all_calling_targets, reselection_events] = expandCallingTargetsForJointReselection( ...
+                        all_calling_targets, interceptor_assigned_target, num_nodes, num_targets, ...
+                        active_trackers, node_positions, original_positions, interceptor_process_data, ...
+                        sensor_ekf_states, sensor_detection_times, current_time, communication_range, ...
+                        wsn_width, wsn_height, MAX_ACTIVE_TRACKERS, USE_MCMF_ASSIGNMENT);
+
+                    for reselect_idx = 1:numel(reselection_events)
+                        fprintf(fid, ['[t=%5.2f][RESELECT] Target %d added to joint selection because ' ...
+                            'sensor %d was already assigned to target %d and provisional target %d selected it\n'], ...
+                            current_time, reselection_events(reselect_idx).from_target_id, ...
+                            reselection_events(reselect_idx).sensor_id, ...
+                            reselection_events(reselect_idx).from_target_id, ...
+                            reselection_events(reselect_idx).to_target_id);
+                    end
+
+                    reselected_targets = unique([reselection_events.from_target_id], 'stable');
+                    for refresh_idx = 1:numel(reselected_targets)
+                        refresh_tid = reselected_targets(refresh_idx);
+                        refresh_trackers = active_trackers{refresh_tid};
+                        refresh_loss_time = inf;
+                        refresh_predictor = -1;
+                        refresh_loss_point = [];
+                        refresh_target_position = [];
+
+                        for refresh_tracker = refresh_trackers(:)'
+                            if refresh_tracker < 1 || refresh_tracker > num_nodes || ...
+                               ~strcmp(sensor_states{refresh_tracker}, SENSOR_STATES.TRACKING) || ...
+                               isempty(sensor_P_matrices{refresh_tracker, refresh_tid}) || ...
+                               isempty(sensor_ekf_states{refresh_tracker, refresh_tid})
+                                continue;
+                            end
+
+                            P = sensor_P_matrices{refresh_tracker, refresh_tid};
+                            if ~isEKFConverged(P, EKF_VELOCITY_CONVERGENCE_THRESHOLD)
+                                continue;
+                            end
+
+                            ekf_target_position = sensor_ekf_states{refresh_tracker, refresh_tid}(1:2)';
+                            target_vel_estimate = sensor_ekf_states{refresh_tracker, refresh_tid}(3:4)';
+                            [candidate_loss_time, candidate_loss_point] = predictTrackerLoss(refresh_tracker, ...
+                                current_time, node_positions(refresh_tracker, :), ekf_target_position, ...
+                                target_vel_estimate, a);
+
+                            if candidate_loss_time < refresh_loss_time
+                                refresh_loss_time = candidate_loss_time;
+                                refresh_predictor = refresh_tracker;
+                                refresh_loss_point = candidate_loss_point;
+                                refresh_target_position = ekf_target_position;
+                            end
+                        end
+
+                        if refresh_predictor > 0
+                            safe_intercept_point = applySafetyMargin(refresh_target_position, refresh_loss_point, SAFETY_MARGIN);
+                            interceptor_process_data{refresh_tid} = struct('predictor_id', refresh_predictor, ...
+                                                                           'target_id', refresh_tid, ...
+                                                                           'loss_time', refresh_loss_time, ...
+                                                                           'intercept_point', safe_intercept_point, ...
+                                                                           'target_position', refresh_target_position, ...
+                                                                           'loss_point', refresh_loss_point);
+                            global_interceptor_data{refresh_tid} = interceptor_process_data{refresh_tid};
+                            individual_loss_predictions(refresh_predictor, refresh_tid) = refresh_loss_time;
+                            loss_prediction_points{refresh_predictor, refresh_tid} = refresh_loss_point;
+
+                            fprintf(fid, ['[t=%5.2f][RESELECT] Target %d refreshed intercept point using tracker %d: ' ...
+                                'loss_time=%.2f, loss_point=[%.2f,%.2f], intercept_point=[%.2f,%.2f]\n'], ...
+                                current_time, refresh_tid, refresh_predictor, refresh_loss_time, ...
+                                refresh_loss_point(1), refresh_loss_point(2), ...
+                                safe_intercept_point(1), safe_intercept_point(2));
+                        else
+                            fprintf(fid, ['[t=%5.2f][RESELECT] Target %d kept previous intercept point; ' ...
+                                'no converged active tracker was available for refresh\n'], ...
+                                current_time, refresh_tid);
+                        end
+                    end
+
                     [available_sensors, assignment_cost_matrix] = buildAssignmentCostMatrixForCallingTargets( ...
                         all_calling_targets, num_nodes, num_targets, active_trackers, node_positions, ...
                         original_positions, interceptor_process_data, sensor_ekf_states, ...
@@ -1037,50 +1110,44 @@ for t = 1:simulation_time/dt
                         'comparison_delta_total_cost', mcmf_info.total_cost - legacy_info.total_cost);
                     assignment_events(end+1) = new_assignment_event;
 
+                    final_owner_by_sensor = zeros(num_nodes, 1);
+                    for owner_idx = 1:length(all_calling_targets)
+                        owner_tid = all_calling_targets(owner_idx);
+                        owner_team = selected_assignments{owner_idx};
+                        for owner_sensor = owner_team(:)'
+                            if owner_sensor > 0 && owner_sensor <= num_nodes
+                                final_owner_by_sensor(owner_sensor) = owner_tid;
+                            end
+                        end
+                    end
+
                     for j = 1:length(all_calling_targets)
                         calling_tid = all_calling_targets(j);
                         selected_team = selected_assignments{j};
                         selected_team_costs = selected_costs_by_target{j};
 
+                        owned_interceptors = find(interceptor_assigned_target == calling_tid & ...
+                            cellfun(@(x) strcmp(x, SENSOR_STATES.INTERCEPTING), sensor_states));
+                        released_interceptors = setdiff(owned_interceptors, selected_team);
+
+                        for losing_interceptor = released_interceptors'
+                            if final_owner_by_sensor(losing_interceptor) == 0
+                                sensor_states{losing_interceptor} = SENSOR_STATES.RETURNING_HOME;
+                                sensor_roles{losing_interceptor} = SENSOR_ROLES.NONE;
+                                interceptor_assigned_target(losing_interceptor) = 0;
+                                sensors_returning_home = [sensors_returning_home; losing_interceptor];
+                                proactive_targets{losing_interceptor} = [];
+
+                                logStateTransition(losing_interceptor, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.RETURNING_HOME, ...
+                                    SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.NONE, current_time, ...
+                                    'Lost joint reselection - returning home');
+                            end
+                        end
+
                         if isempty(selected_team)
                             fprintf(fid, '[t=%5.2f][ASSIGN] Target %d: no interceptors assigned in this round\n', ...
                                 current_time, calling_tid);
                             continue;
-                        end
-
-                        if length(all_calling_targets) == 1
-                            losing_interceptors = setdiff(current_interceptors, selected_team);
-
-                            for losing_interceptor = losing_interceptors'
-                                is_working_other_target = false;
-                                for tid = 1:num_targets
-                                    if tid ~= calling_tid && length(losing_interceptor) == 1 && losing_interceptor > 0 && losing_interceptor <= num_nodes && ...
-                                       ~isempty(proactive_targets) && length(proactive_targets) >= losing_interceptor && ...
-                                       ~isempty(proactive_targets{losing_interceptor})
-                                        for other_tid = 1:num_targets
-                                            if other_tid ~= calling_tid && ~isempty(global_interceptor_data{other_tid}) && ...
-                                               isfield(global_interceptor_data{other_tid}, 'intercept_point')
-                                                other_intercept = global_interceptor_data{other_tid}.intercept_point;
-                                                if norm(proactive_targets{losing_interceptor} - other_intercept) < 1.0
-                                                    is_working_other_target = true;
-                                                    break;
-                                                end
-                                            end
-                                        end
-                                    end
-                                end
-
-                                if ~is_working_other_target && ~isempty(losing_interceptor) && losing_interceptor > 0 && losing_interceptor <= num_nodes
-                                    sensor_states{losing_interceptor} = SENSOR_STATES.RETURNING_HOME;
-                                    sensor_roles{losing_interceptor} = SENSOR_ROLES.NONE;
-                                    sensors_returning_home = [sensors_returning_home; losing_interceptor];
-                                    proactive_targets{losing_interceptor} = [];
-
-                                    logStateTransition(losing_interceptor, SENSOR_STATES.INTERCEPTING, SENSOR_STATES.RETURNING_HOME, ...
-                                        SENSOR_ROLES.INTERCEPTOR_CANDIDATE, SENSOR_ROLES.NONE, current_time, ...
-                                        'Lost rebidding process - returning home');
-                                end
-                            end
                         end
 
                         safe_intercept_point = interceptor_process_data{calling_tid}.intercept_point;
@@ -1089,25 +1156,15 @@ for t = 1:simulation_time/dt
                             winner = selected_team(winner_idx);
                             winner_cost = selected_team_costs(winner_idx);
                             if ismember(winner, current_interceptors)
-                                previous_assigned_target = -1;
+                                previous_assigned_target = interceptor_assigned_target(winner);
                                 previous_intercept_point = [];
 
                                 if ~isempty(proactive_targets) && length(proactive_targets) >= winner && ...
                                    ~isempty(proactive_targets{winner})
                                     previous_intercept_point = proactive_targets{winner};
-                                    for previous_tid = 1:num_targets
-                                        if previous_tid ~= calling_tid && ~isempty(global_interceptor_data{previous_tid}) && ...
-                                           isfield(global_interceptor_data{previous_tid}, 'intercept_point')
-                                            previous_target_point = global_interceptor_data{previous_tid}.intercept_point;
-                                            if norm(previous_intercept_point - previous_target_point) < 1.0
-                                                previous_assigned_target = previous_tid;
-                                                break;
-                                            end
-                                        end
-                                    end
                                 end
 
-                                if previous_assigned_target > 0
+                                if previous_assigned_target > 0 && previous_assigned_target ~= calling_tid
                                     fprintf(fid, ['[t=%5.2f][EMPLOY] Sensor %d was executing target %d intercept ' ...
                                         'and is now employed by target %d (%s); new_cost=%.3f, ' ...
                                         'previous_point=[%.2f,%.2f], new_point=[%.2f,%.2f]\n'], ...
@@ -1128,12 +1185,14 @@ for t = 1:simulation_time/dt
                                 end
 
                                 proactive_targets{winner} = safe_intercept_point;
+                                interceptor_assigned_target(winner) = calling_tid;
                             else
                                 old_state = sensor_states{winner};
                                 old_role = sensor_roles{winner};
                                 sensor_states{winner} = SENSOR_STATES.INTERCEPTING;
                                 sensor_roles{winner} = SENSOR_ROLES.INTERCEPTOR_CANDIDATE;
                                 proactive_targets{winner} = safe_intercept_point;
+                                interceptor_assigned_target(winner) = calling_tid;
 
                                 logStateTransition(winner, old_state, SENSOR_STATES.INTERCEPTING, ...
                                     old_role, SENSOR_ROLES.INTERCEPTOR_CANDIDATE, current_time, ...
@@ -1585,6 +1644,7 @@ for t = 1:simulation_time/dt
                             
                             % Add interceptor as tracker for this target
                             sensor_states{i} = SENSOR_STATES.TRACKING;
+                            interceptor_assigned_target(i) = 0;
                             active_trackers{detected_target_id} = [active_trackers{detected_target_id}; i];
                             
                             % Assign role
@@ -1631,6 +1691,7 @@ for t = 1:simulation_time/dt
                                 % This is the first interceptor being processed
                                 sensor_states{i} = SENSOR_STATES.TRACKING;
                                 sensor_roles{i} = SENSOR_ROLES.PRIMARY_TRACKER;
+                                interceptor_assigned_target(i) = 0;
                                 active_trackers{detected_target_id} = [active_trackers{detected_target_id}; i];
                                 
                                 % Initialize EKF for this target
@@ -1659,6 +1720,7 @@ for t = 1:simulation_time/dt
                                 % Immediately go home
                                 sensor_states{i} = SENSOR_STATES.RETURNING_HOME;
                                 sensor_roles{i} = SENSOR_ROLES.NONE;
+                                interceptor_assigned_target(i) = 0;
                                 
                                 if ~ismember(i, sensors_returning_home)
                                     sensors_returning_home = [sensors_returning_home; i];
@@ -1672,6 +1734,7 @@ for t = 1:simulation_time/dt
                         else
                             sensor_states{i} = SENSOR_STATES.RETURNING_HOME;
                             sensor_roles{i} = SENSOR_ROLES.NONE;
+                            interceptor_assigned_target(i) = 0;
                             if ~ismember(i, sensors_returning_home)
                                 sensors_returning_home = [sensors_returning_home; i];
                             end
@@ -1685,6 +1748,7 @@ for t = 1:simulation_time/dt
                         if distance_to_intercept < 1
                             sensor_states{i} = SENSOR_STATES.RETURNING_HOME;
                             sensor_roles{i} = SENSOR_ROLES.NONE;
+                            interceptor_assigned_target(i) = 0;
                             
                             if ~ismember(i, sensors_returning_home)
                                 sensors_returning_home = [sensors_returning_home; i];
@@ -1776,6 +1840,12 @@ for t = 1:simulation_time/dt
         if ~strcmp(prev_state, sensor_states{i}) || ~strcmp(prev_role, sensor_roles{i})
             sensor_state_history{i} = [sensor_state_history{i}; 
                 current_time, string(sensor_states{i}), string(sensor_roles{i})];
+        end
+    end
+
+    for sensor_id = 1:num_nodes
+        if ~strcmp(sensor_states{sensor_id}, SENSOR_STATES.INTERCEPTING)
+            interceptor_assigned_target(sensor_id) = 0;
         end
     end
     
@@ -2005,10 +2075,11 @@ for t = 1:simulation_time/dt
                                 dot_product = 1; % Default to direct approach
                             end
                             
-                            if confidence <= 0.2
+                            if confidence <= 0
                                 % Low confidence - return home
                                 sensor_states{i} = SENSOR_STATES.RETURNING_HOME;
                                 sensor_roles{i} = SENSOR_ROLES.NONE;
+                                interceptor_assigned_target(i) = 0;
                                 sensors_returning_home = [sensors_returning_home; i];
                                 proactive_targets{i} = [];
                                 
@@ -2124,6 +2195,12 @@ for t = 1:simulation_time/dt
         % Update trajectory for moving sensors
         if ismember(sensor_states{i}, {SENSOR_STATES.TRACKING, SENSOR_STATES.INTERCEPTING})
             sensor_trajectories{i} = [sensor_trajectories{i}; node_positions(i,:)];
+        end
+    end
+
+    for sensor_id = 1:num_nodes
+        if ~strcmp(sensor_states{sensor_id}, SENSOR_STATES.INTERCEPTING)
+            interceptor_assigned_target(sensor_id) = 0;
         end
     end
     
@@ -2337,6 +2414,7 @@ for t = 1:simulation_time/dt
                 % Send home
                 sensor_states{i} = SENSOR_STATES.RETURNING_HOME;
                 sensor_roles{i} = SENSOR_ROLES.NONE;
+                interceptor_assigned_target(i) = 0;
                 
                 % Remove from active trackers for all targets
                 for target_id = 1:num_targets
@@ -2923,6 +3001,7 @@ save(mat_filename, ...
     'interceptor_events', ...
     'assignment_events', ...
     'interceptor_employ_events', ...
+    'interceptor_assigned_target', ...
     'target_trajectories', ...
     'sensor_trajectories', ...
     'sensor_P_trace_history', ...

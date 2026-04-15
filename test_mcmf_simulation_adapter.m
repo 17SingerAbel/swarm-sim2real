@@ -99,6 +99,34 @@ verifyEqual(testCase, numel(unique(assigned_sensors)), numel(assigned_sensors));
 verifyEqual(testCase, diagnostics.algorithm, 'MCMF');
 end
 
+function testJointReselectionAddsPreviousOwnerTarget(testCase)
+fixture = makeStolenInterceptorFixture();
+
+[expanded_targets, reselection_events] = expandCallingTargetsForJointReselection( ...
+    fixture.calling_targets, fixture.interceptor_assigned_target, fixture.num_nodes, ...
+    fixture.num_targets, fixture.active_trackers, fixture.node_positions, ...
+    fixture.original_positions, fixture.interceptor_process_data, ...
+    fixture.sensor_ekf_states, fixture.sensor_detection_times, fixture.current_time, ...
+    fixture.communication_range, fixture.wsn_width, fixture.wsn_height, 2, true);
+
+verifyEqual(testCase, expanded_targets(:)', [2 1]);
+verifyEqual(testCase, numel(reselection_events), 1);
+verifyEqual(testCase, reselection_events(1).sensor_id, 14);
+verifyEqual(testCase, reselection_events(1).from_target_id, 1);
+verifyEqual(testCase, reselection_events(1).to_target_id, 2);
+
+[candidates, cost_matrix] = buildAssignmentCostMatrixForCallingTargets( ...
+    expanded_targets, fixture.num_nodes, fixture.num_targets, fixture.active_trackers, ...
+    fixture.node_positions, fixture.original_positions, fixture.interceptor_process_data, ...
+    fixture.sensor_ekf_states, fixture.sensor_detection_times, fixture.current_time, ...
+    fixture.communication_range, fixture.wsn_width, fixture.wsn_height);
+[assignments, diagnostics] = solveInterceptorAssignments(expanded_targets, candidates, cost_matrix, 2, true);
+assigned_sensors = [assignments{:}];
+
+verifyEqual(testCase, diagnostics.assigned_slots_total, 4);
+verifyEqual(testCase, numel(unique(assigned_sensors)), numel(assigned_sensors));
+end
+
 function fixture = makeAdapterFixture(num_nodes, active_trackers)
 num_targets = 2;
 calling_targets = [1; 2];
@@ -107,6 +135,7 @@ node_positions = zeros(num_nodes, 2);
 for sensor_id = 1:num_nodes
     node_positions(sensor_id, :) = [sensor_id * 2, mod(sensor_id, 3) * 1.5];
 end
+
 original_positions = node_positions;
 
 interceptor_process_data = cell(num_targets, 1);
@@ -202,6 +231,59 @@ fixture.current_time = 2;
 fixture.communication_range = 100;
 fixture.wsn_width = 25;
 fixture.wsn_height = 25;
+end
+
+function fixture = makeStolenInterceptorFixture()
+num_nodes = 20;
+num_targets = 2;
+calling_targets = 2;
+active_trackers = {[1; 2], [3; 4]};
+
+node_positions = zeros(num_nodes, 2);
+for sensor_id = 1:num_nodes
+    node_positions(sensor_id, :) = [100 + sensor_id, 100 + sensor_id];
+end
+node_positions(14, :) = [20, 0];
+node_positions(20, :) = [20.5, 0];
+node_positions(10, :) = [0, 20];
+node_positions(11, :) = [0.5, 20];
+original_positions = node_positions;
+
+interceptor_process_data = cell(num_targets, 1);
+interceptor_process_data{1} = struct( ...
+    'intercept_point', [0, 20], ...
+    'predictor_id', 1, ...
+    'target_position', [-2, 20]);
+interceptor_process_data{2} = struct( ...
+    'intercept_point', [20, 0], ...
+    'predictor_id', 3, ...
+    'target_position', [18, 0]);
+
+sensor_ekf_states = cell(num_nodes, num_targets);
+sensor_detection_times = zeros(num_nodes, num_targets);
+sensor_ekf_states{1, 1} = [-2; 20; 1; 0];
+sensor_ekf_states{3, 2} = [18; 0; 1; 0];
+sensor_detection_times(1, 1) = 1;
+sensor_detection_times(3, 2) = 1;
+
+interceptor_assigned_target = zeros(num_nodes, 1);
+interceptor_assigned_target(14) = 1;
+
+fixture = struct();
+fixture.num_nodes = num_nodes;
+fixture.num_targets = num_targets;
+fixture.calling_targets = calling_targets;
+fixture.active_trackers = active_trackers(:);
+fixture.node_positions = node_positions;
+fixture.original_positions = original_positions;
+fixture.interceptor_process_data = interceptor_process_data;
+fixture.sensor_ekf_states = sensor_ekf_states;
+fixture.sensor_detection_times = sensor_detection_times;
+fixture.interceptor_assigned_target = interceptor_assigned_target;
+fixture.current_time = 2;
+fixture.communication_range = 500;
+fixture.wsn_width = 200;
+fixture.wsn_height = 200;
 end
 
 function fixture = makeTwoTargetFullAllocationFixture()
