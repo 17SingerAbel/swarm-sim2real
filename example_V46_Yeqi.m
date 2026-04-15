@@ -54,8 +54,11 @@
 
 % V38_b: Interception logics is updated, no wobbling.
 
-% V46_Yeqi: 
-
+% V46_Yeqi: Added USE_MCMF_ASSIGNMENT to support A/B testing between the
+% legacy assignment method and the MCMF-based assignment method. When a
+% target attempts to select an interceptor already assigned to another target,
+% a joint conflict-resolution process is triggered for the affected targets.
+% The interception points are then updated according to the new assignment.
 %
 
 close all; clc;
