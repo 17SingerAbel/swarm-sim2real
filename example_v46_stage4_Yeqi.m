@@ -1084,6 +1084,25 @@ for t = 1:simulation_time/dt
                         sensor_detection_times, current_time, communication_range, ...
                         wsn_width, wsn_height);
 
+                    for top_log_idx = 1:length(all_calling_targets)
+                        [sorted_costs, sorted_order] = sort(assignment_cost_matrix(:, top_log_idx), 'ascend');
+                        finite_mask = isfinite(sorted_costs);
+                        sorted_costs = sorted_costs(finite_mask);
+                        sorted_order = sorted_order(finite_mask);
+                        top_count = min(8, numel(sorted_order));
+                        top_cost_text = '';
+                        for top_idx = 1:top_count
+                            top_sensor = available_sensors(sorted_order(top_idx));
+                            top_cost_text = [top_cost_text, sprintf('S%d=%.3f ', ...
+                                top_sensor, sorted_costs(top_idx))]; %#ok<AGROW>
+                        end
+                        if isempty(top_cost_text)
+                            top_cost_text = 'none';
+                        end
+                        fprintf(fid, '[t=%5.2f][BID_TOP8] Target %d top %d candidates: %s\n', ...
+                            current_time, all_calling_targets(top_log_idx), top_count, strtrim(top_cost_text));
+                    end
+
                     [selected_assignments, assignment_info] = solveInterceptorAssignments( ...
                         all_calling_targets, available_sensors, assignment_cost_matrix, ...
                         MAX_ACTIVE_TRACKERS, USE_MCMF_ASSIGNMENT);
