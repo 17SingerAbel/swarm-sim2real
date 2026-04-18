@@ -111,7 +111,7 @@ a = 1.5;                % Sensor coverage radius (increased by 50%)
 node_spacing = 8*a;     % Distance between nodes
 grid_size = 5;          % Grid size
 dt = 0.1;               % Time step (delta_ts)
-simulation_time = 75;   % Total simulation time
+simulation_time = 30;   % Total simulation time
 % target_velocity = 1.0;  % Target speed (units/s)  % Remove global target_velocity, now handled per target
 sensor_velocity = 0.75;  % Sensor tracking speed (units/s)
 randomness = 0.5;       % Target movement randomness
@@ -163,20 +163,20 @@ noise = 0.01;
 
 waypoints_list = cell(num_targets, 1);
 
-% EXAMPLE 1
-waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
-waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
+% % EXAMPLE 1
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+% waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
 
-% Different speeds per target
-target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
-% Different entry times
-target_start_time = [0.0, 0.0];  % Staggered entry times
+% % Different speeds per target
+% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% % Different entry times
+% target_start_time = [0.0, 0.0];  % Staggered entry times
 
-% Initialize with time lag - Target 2 starts later
-target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = waypoints_list{2}(1, :);
-target_trajectories{1} = target_positions(1, :);
-target_trajectories{2} = target_positions(2, :);
+% % Initialize with time lag - Target 2 starts later
+% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+% target_positions(2, :) = waypoints_list{2}(1, :);
+% target_trajectories{1} = target_positions(1, :);
+% target_trajectories{2} = target_positions(2, :);
 
 % % Example 2
 % % Same-direction trajectories with time lag
@@ -192,6 +192,22 @@ target_trajectories{2} = target_positions(2, :);
 % target_positions(2, :) = [0, 0.2];  % Target 2 starts off-screen, will enter later
 % target_trajectories{1} = target_positions(1, :);
 % target_trajectories{2} = target_positions(2, :);
+
+
+% EXAMPLE 3
+waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+waypoints_list{2} = waypoints_list{1}; % Start with the same path
+waypoints_list{2}(:,2) = waypoints_list{2}(:,2) + 1.5;
+% Different speeds per target
+target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% Different entry times
+target_start_time = [0.0, 0.0];  % Staggered entry times
+
+% Initialize with time lag - Target 2 starts later
+target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+target_positions(2, :) = waypoints_list{2}(1, :);
+target_trajectories{1} = target_positions(1, :);
+target_trajectories{2} = target_positions(2, :);
 
 
 
@@ -247,6 +263,7 @@ end
 
 node_positions = full_grid;
 original_positions = node_positions;
+disp(original_positions)
 
 %% Initialize tracking variables - UPDATED FOR three TARGETS
 active_trackers = cell(num_targets, 1);           % Array of currently active tracking sensors per target
