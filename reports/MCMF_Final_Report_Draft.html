@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MCMF-Based Interceptor Assignment for Cooperative WSN Tracking</title>
+  <style>
+    body {
+      font-family: "Times New Roman", serif;
+      line-height: 1.48;
+      max-width: 980px;
+      margin: 38px auto;
+      color: #111;
+      background: #fff;
+    }
+    h1, h2, h3, h4 {
+      font-family: Arial, sans-serif;
+      color: #111;
+    }
+    h1 {
+      text-align: center;
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+    h2 {
+      font-size: 19px;
+      border-bottom: 1px solid #999;
+      padding-bottom: 4px;
+      margin-top: 30px;
+    }
+    h3 {
+      font-size: 16px;
+      margin-top: 20px;
+    }
+    h4 {
+      font-size: 14px;
+      margin-top: 14px;
+      margin-bottom: 4px;
+    }
+    p {
+      margin: 8px 0;
+    }
+    .author, .course {
+      text-align: center;
+    }
+    .author {
+      margin-bottom: 4px;
+    }
+    .course {
+      margin-bottom: 30px;
+    }
+    .abstract {
+      border: 1px solid #aaa;
+      padding: 12px 16px;
+      margin: 20px 0 26px;
+      background: #fafafa;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 14px 0 22px;
+      font-size: 14px;
+    }
+    caption {
+      caption-side: top;
+      text-align: left;
+      font-weight: bold;
+      font-family: Arial, sans-serif;
+      padding-bottom: 5px;
+    }
+    th, td {
+      border: 1px solid #666;
+      padding: 7px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f2f2f2;
+      font-family: Arial, sans-serif;
+    }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+    .note {
+      font-style: italic;
+      color: #333;
+    }
+    .equation {
+      font-family: Consolas, "Courier New", monospace;
+      background: #f7f7f7;
+      border-left: 3px solid #666;
+      padding: 8px 10px;
+      margin: 10px 0;
+    }
+    .figure {
+      margin: 18px 0 24px;
+      text-align: center;
+    }
+    .figure-title {
+      text-align: left;
+      font-weight: bold;
+      font-family: Arial, sans-serif;
+      margin: 8px 0 5px;
+    }
+    .small {
+      font-size: 13px;
+    }
+    ul {
+      margin-top: 6px;
+    }
+    @media print {
+      body {
+        margin: 18mm;
+        max-width: none;
+      }
+      h2 {
+        page-break-after: avoid;
+      }
+      table, .figure {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<h1>MCMF-Based Interceptor Assignment for Cooperative Multi-Target Tracking in a Mobile WSN</h1>
+<div class="author">Yeqi Sang</div>
+<div class="course">MIE8888 Final Report Draft</div>
+
+<div class="abstract">
+  <h3>Abstract</h3>
+  <p>
+    This report studies interceptor assignment in a mobile wireless sensor network (WSN) used for cooperative multi-target tracking. In the original simulation, conflict resolution was based on a legacy minimax objective that attempts to minimize the worst team cost among the requesting targets. This objective protects the weakest target assignment, but it does not directly optimize the total resource burden imposed on the sensor network. The proposed Version 46 (V46) assignment module reformulates the problem as a min-cost max-flow (MCMF) problem. Its objective is lexicographic: first maximize the number of filled interceptor slots, then minimize the total assignment cost among solutions with the same number of assigned slots.
+  </p>
+  <p>
+    The report compares MCMF and the legacy minimax method using the same simulation candidates and the same cost matrices. A real simulation event at <code>t = 39.50 s</code> is used as the primary worked example. The results show that MCMF assigns all requested slots and reduces the total assignment cost from <code>1.182</code> to <code>1.085</code> in this event. The report also discusses limitations: total-cost minimization does not explicitly protect the worst target team, MATLAB workstation timing is only a prototype baseline, embedded deployment must include communication latency, and the current coordination model is temporary leader-based rather than fully decentralized consensus.
+  </p>
+</div>
+
+<h2>1. Introduction</h2>
+<p>
+Mobile wireless sensor networks are useful for monitoring moving targets because mobile sensors can adapt their locations as targets move through the sensing field. In this project, the WSN consists of mobile sensor nodes that cooperatively track up to three moving targets. Each target is intended to maintain two active trackers, a primary tracker and a secondary tracker, so that tracking can continue even when one sensor approaches the edge of its detection range.
+</p>
+<p>
+The central problem addressed in this report is interceptor assignment during proactive handover. When an active tracker predicts that it will lose a target, idle or non-tracking sensors are asked to move toward a predicted interception point before the target is lost. This process becomes difficult when multiple targets request interceptors at the same time, or when a later target attempts to select a sensor that is already executing an interception task for another target. In these cases, independent target-by-target bidding can create conflicts, duplicate assignments, or unnecessary reassignment of sensors.
+</p>
+<p>
+The original conflict-resolution method used a minimax-style objective. For simultaneous target conflicts, it attempted to select teams so that the worst target team cost was minimized. This is a fairness-oriented objective: no target should receive a very poor team if a more balanced solution is available. In V46, the interceptor assignment problem is instead formulated as a slot-based global assignment problem and solved using min-cost max-flow. The new method first maximizes the number of assigned interceptor slots and then minimizes the total assignment cost. This changes the objective from worst-team fairness to system-level feasibility and efficiency.
+</p>
+<p>
+The main contributions of this report are:
+</p>
+<ul>
+  <li>It reformulates interceptor selection as a global slot-based assignment problem between candidate sensors and target interceptor slots.</li>
+  <li>It compares MCMF and legacy minimax assignments using the same candidate sensors and cost matrices.</li>
+  <li>It uses real simulation evidence to show how the two objectives can make different decisions.</li>
+  <li>It analyzes embedded feasibility and communication limitations for Crazyflie-class deployment.</li>
+  <li>It clarifies that the current coordination design is temporary leader-based, not fully decentralized consensus.</li>
+</ul>
+
+<h2>2. Literature Review</h2>
+
+<h3>2.1 Cooperative Tracking in Mobile WSNs</h3>
+<p>
+Wireless sensor networks were originally studied as networks of small sensing, computation, and communication devices with limited resources. Akyildiz et al. describe WSNs as systems constrained by energy, processing, and communication capacity, which is directly relevant to this project because interceptor selection consumes sensor motion, communication, and computation resources [1]. Mobile sensor network surveys further emphasize that mobile sensors can support target searching and tracking, but that mobility introduces planning, coordination, and estimation challenges [2].
+</p>
+<p>
+The multi-target tracking aspect of this project is related to cooperative multi-robot observation. Parker's CMOMMT work frames the problem as maximizing the time during which moving targets are observed by a team of robots with limited sensing range [3]. Kolling and Carpin also study cooperative observation of multiple moving targets using distributed coordination, prediction of target loss, and local assignment mechanisms [4]. These works motivate the use of mobile sensors and cooperative handover. However, this project focuses more narrowly on the assignment step that occurs when multiple targets compete for replacement interceptors.
+</p>
+
+<h3>2.2 EKF-Based Tracking and Prediction</h3>
+<p>
+The simulation uses an Extended Kalman Filter (EKF) to estimate each target state as <code>[x, y, vx, vy]</code>. EKF-based methods are widely used when tracking moving targets with noisy measurements and nonlinear observation models. Bar-Shalom, Li, and Kirubarajan provide a standard tracking and navigation reference for state estimation under uncertainty [5]. More recent WSN tracking work continues to use EKF variants to improve localization and tracking accuracy in sensor networks [6].
+</p>
+<p>
+In this project, EKF estimates are not the final contribution by themselves. Instead, they provide the prediction inputs for handover: estimated target position, velocity, predicted loss time, and predicted interception point. This makes the assignment problem dependent on estimation quality. A sensor is not only bidding based on geometric distance; it is bidding on an intercept point whose reliability depends on tracking convergence and prediction stability.
+</p>
+
+<h3>2.3 Auction and Bidding-Based Task Allocation</h3>
+<p>
+Multi-robot task allocation (MRTA) provides the assignment framework for this project. Gerkey and Mataric show that many multi-robot coordination problems can be analyzed as optimization problems, including assignment and scheduling problems [7]. Market-based or auction-based methods are common because each robot or sensor can express its suitability for a task as a scalar utility or cost. Bertsekas' auction algorithms also connect bidding ideas to assignment and network flow problems [8].
+</p>
+<p>
+The current simulation already contains a bid cost that combines distance from home, distance to the intercept point, arrival timing, and estimate uncertainty. Therefore, MCMF does not replace the bidding idea. It uses the existing bid as an assignment cost and changes how competing bids are resolved when several targets need interceptors at the same time.
+</p>
+
+<h3>2.4 Minimax and Min-Cost Assignment Objectives</h3>
+<p>
+The legacy minimax method and the proposed MCMF method answer different questions. Minimax asks: which assignment minimizes the worst team cost among targets? This protects the least-favored target team and is appropriate when fairness or worst-target quality is the dominant objective. Min-cost assignment asks: which feasible assignment produces the lowest total cost? In this project, MCMF further adds a first priority: fill as many requested slots as possible before minimizing cost.
+</p>
+<p>
+Minimum-cost flow is a standard network optimization model for assigning limited resources to demand nodes while respecting capacity constraints. Ahuja, Magnanti, and Orlin present minimum-cost flow as a core network optimization problem with broad applications, including assignment and matching [9]. This makes MCMF suitable for the interceptor problem because each sensor can be assigned at most once, each target has a limited number of required slots, and each sensor-target pairing has a cost.
+</p>
+
+<h3>2.5 Distributed Coordination and Embedded Constraints</h3>
+<p>
+A real WSN cannot be evaluated only by optimization quality. It must also consider communication latency, coordinator failure, and embedded processor limitations. Decentralized auction methods, such as the consensus-based auction and bundle algorithms, show one way to resolve assignments without a permanent central controller by combining bidding with local consensus [10]. These methods are relevant because the current simulation still uses an event-local coordinator to collect bids and run the global assignment.
+</p>
+<p>
+Crazyflie-class hardware provides a useful embedded reference point. The Crazyflie 2.0 uses an STM32F405 main processor at 168 MHz and an nRF51822 radio/power processor at 32 MHz [11]. The STM32F405 includes a single-precision floating point unit, but it is still very different from a workstation CPU running MATLAB [12]. The Crazyflie radio stack also imposes packet-size, polling, retry, and peer-to-peer communication constraints [13], [14]. These constraints mean that a final deployment claim requires C-level timing and communication-aware validation, not only MATLAB runtime measurement.
+</p>
+
+<h2>3. System Model and Problem Formulation</h2>
+
+<h3>3.1 Simulation Setting</h3>
+<p>
+The simulation models a mobile WSN with 25 sensors arranged in a 5 by 5 staggered hexagonal grid. The network tracks up to three moving targets. Each target should maintain two active trackers, corresponding to the primary and secondary tracking roles. Sensor-level finite state machine states include <code>IDLE</code>, <code>DETECTING</code>, <code>TRACKING</code>, <code>INTERCEPTING</code>, <code>SEARCHING</code>, and <code>RETURNING_HOME</code>. The handover pipeline for each target progresses through <code>NONE</code>, <code>PENDING_BROADCAST</code>, <code>PENDING_BIDDING</code>, <code>PENDING_SELECTION</code>, and back to <code>NONE</code>.
+</p>
+
+<table>
+  <caption>Table 1. Key simulation parameters.</caption>
+  <tr>
+    <th>Parameter</th>
+    <th>Value</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td>Number of sensors</td>
+    <td>25</td>
+    <td>5 by 5 mobile WSN grid</td>
+  </tr>
+  <tr>
+    <td>Number of targets</td>
+    <td>3</td>
+    <td>Maximum number of simultaneously tracked targets</td>
+  </tr>
+  <tr>
+    <td>Trackers per target</td>
+    <td>2</td>
+    <td>Primary and secondary tracker roles</td>
+  </tr>
+  <tr>
+    <td>Sensor detection radius</td>
+    <td>1.5 units</td>
+    <td>Sensor coverage radius</td>
+  </tr>
+  <tr>
+    <td>Sensor velocity</td>
+    <td>0.75 units/s</td>
+    <td>Mobile sensor movement speed</td>
+  </tr>
+  <tr>
+    <td>Time step</td>
+    <td>0.1 s</td>
+    <td>Simulation update interval</td>
+  </tr>
+  <tr>
+    <td>Interceptors per calling target</td>
+    <td>2</td>
+    <td>Number of replacement interceptor slots requested by each calling target</td>
+  </tr>
+</table>
+
+<h3>3.2 Assignment Variables</h3>
+<p>
+When one or more targets enter <code>PENDING_SELECTION</code>, the simulation defines a set of calling targets and a set of candidate sensors. Candidate sensors exclude active trackers and sensors that should not be reassigned. For each calling target, the simulation computes a predicted intercept point. For each candidate sensor and each calling target, the simulation computes one bid cost. These bid values form the assignment cost matrix:
+</p>
+<div class="equation">
+  B[i, j] = bid cost of assigning candidate sensor i to calling target j
+</div>
+<p>
+Each calling target requires two interceptor slots. A target slot is one required interceptor position for that target. For example, if targets 1 and 2 are calling, and each target requires two interceptors, the assignment problem has four target slots: target 1 slot A, target 1 slot B, target 2 slot A, and target 2 slot B.
+</p>
+
+<h3>3.3 Bid Cost Function</h3>
+<p>
+The bid cost represents how suitable a sensor is for a target. A lower bid indicates a better candidate. The simulation uses a weighted cost:
+</p>
+<div class="equation">
+  bid = w1 * P_home + w2 * P_spatial + w3 * P_temporal + w4 * P_uncertainty
+</div>
+<p>
+The four terms have system meaning:
+</p>
+<ul>
+  <li><code>P_home</code> penalizes displacement from the sensor's home grid position.</li>
+  <li><code>P_spatial</code> penalizes distance from the sensor to the target intercept point.</li>
+  <li><code>P_temporal</code> penalizes poor arrival timing relative to the target motion and loss deadline.</li>
+  <li><code>P_uncertainty</code> penalizes low confidence in the shared target estimate.</li>
+</ul>
+<p>
+Therefore, total bid cost is not an arbitrary number. It is an approximation of network-wide resource burden, including sensor displacement, intercept feasibility, timing quality, and estimation reliability.
+</p>
+
+<h3>3.4 Problem Statement</h3>
+<p>
+The interceptor assignment problem can be stated as follows. Given a set of calling targets, a set of candidate sensors, and a sensor-target cost matrix, assign candidate sensors to target interceptor slots such that:
+</p>
+<ul>
+  <li>Each target requests two interceptor slots.</li>
+  <li>Each candidate sensor can be assigned at most once.</li>
+  <li>Active trackers are excluded from the candidate set.</li>
+  <li>The assignment should fill as many requested slots as possible.</li>
+  <li>Among assignments with the same number of filled slots, the assignment should minimize total bid cost.</li>
+</ul>
+<p>
+Conflicts occur when multiple targets compete for overlapping low-cost candidates, or when a later target attempts to select a sensor that is already assigned as an interceptor for another target.
+</p>
+
+<h2>4. Proposed MCMF-Based Assignment Method</h2>
+
+<h3>4.1 Assignment Graph</h3>
+<p>
+The MCMF solver expands each calling target into two interceptor slots and builds a directed flow graph:
+</p>
+<ul>
+  <li>The source connects to each candidate sensor node with capacity 1 and cost 0.</li>
+  <li>Each candidate sensor connects to each target slot with capacity 1 and cost equal to the corresponding bid value.</li>
+  <li>Each target slot connects to the sink with capacity 1 and cost 0.</li>
+</ul>
+<p>
+The capacity from the source to each sensor enforces the rule that one sensor cannot be assigned to more than one target slot. The target-slot-to-sink capacity enforces the number of requested interceptors per target. The cost on each sensor-to-slot edge encodes the bid cost for assigning that sensor to that target.
+</p>
+
+<h3>4.2 Lexicographic Objective</h3>
+<p>
+The solver objective is lexicographic. The first objective is to maximize the number of assigned slots. The second objective is to minimize the total assignment cost among solutions with the same number of assigned slots. In implementation, a large assignment reward is subtracted from each feasible sensor-to-slot edge cost. This makes each additional filled slot more valuable than any possible cost reduction from leaving a slot empty.
+</p>
+<div class="equation">
+  Objective 1: maximize assigned interceptor slots<br>
+  Objective 2: minimize total assignment cost, conditional on Objective 1
+</div>
+
+<h3>4.3 Why This Objective Fits the System</h3>
+<p>
+The main system requirement is to sustain target tracking by replacing trackers before they lose contact. Therefore, filling interceptor slots is a feasibility objective. If a target does not receive enough replacement sensors, then the system may lose tracking continuity regardless of how fair the remaining assignment appears. This is why the proposed method first maximizes the number of assigned slots.
+</p>
+<p>
+After slot filling is handled, total cost becomes the correct secondary objective for this system because the bid cost already represents network-wide resource burden. A solution with lower total bid cost tends to use sensors that are closer to home, closer to the intercept point, better timed, and supported by more reliable estimates. Over repeated handovers, reducing this total burden helps preserve future network availability.
+</p>
+<p>
+The legacy minimax objective remains meaningful. It protects the worst target team and is appropriate when worst-target fairness is the dominant mission goal. However, minimax may accept higher total resource expenditure to balance team costs. In a resource-constrained mobile WSN, it is not always desirable to sacrifice total network efficiency only to improve the worst single team cost, especially when the dual-tracker requirement and handover gates already provide target-level protection before assignment.
+</p>
+
+<h3>4.4 Limitation of the Objective</h3>
+<p>
+The proposed MCMF objective does not explicitly minimize the worst target team cost. Therefore, it does not provide the same fairness guarantee as minimax. If a mission requires strict worst-target protection, the assignment formulation should be extended with a maximum per-target team cost constraint or with a secondary fairness term. In this report, minimax is treated as a valid fairness baseline, not as an incorrect method.
+</p>
+
+<div class="figure">
+  <div class="figure-title">Figure 1. Simulation-level handover and MCMF assignment flowchart.</div>
+  <svg width="900" height="760" viewBox="0 0 900 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flowchart of simulation-level handover and MCMF assignment process">
+    <defs>
+      <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L0,6 L9,3 z" fill="#333" />
+      </marker>
+      <style>
+        .box { fill: #ffffff; stroke: #333333; stroke-width: 1.4; }
+        .decision { fill: #ffffff; stroke: #333333; stroke-width: 1.4; }
+        .label { font-family: Arial, sans-serif; font-size: 13px; fill: #111111; }
+        .smalllabel { font-family: Arial, sans-serif; font-size: 12px; fill: #111111; }
+        .arrowline { stroke: #333333; stroke-width: 1.4; fill: none; marker-end: url(#arrow); }
+      </style>
+    </defs>
+
+    <rect class="box" x="275" y="20" width="350" height="48" rx="6" />
+    <text class="label" x="450" y="42" text-anchor="middle">Simulation time step update</text>
+    <text class="smalllabel" x="450" y="58" text-anchor="middle">Update sensors, targets, EKF states</text>
+
+    <line class="arrowline" x1="450" y1="68" x2="450" y2="102" />
+    <polygon class="decision" points="450,102 610,150 450,198 290,150" />
+    <text class="label" x="450" y="142" text-anchor="middle">EKF converged and</text>
+    <text class="label" x="450" y="158" text-anchor="middle">prediction stable?</text>
+
+    <line class="arrowline" x1="290" y1="150" x2="145" y2="150" />
+    <text class="smalllabel" x="218" y="140" text-anchor="middle">No</text>
+    <rect class="box" x="20" y="126" width="125" height="48" rx="6" />
+    <text class="smalllabel" x="82" y="146" text-anchor="middle">Continue normal</text>
+    <text class="smalllabel" x="82" y="162" text-anchor="middle">tracking/search</text>
+
+    <line class="arrowline" x1="450" y1="198" x2="450" y2="232" />
+    <text class="smalllabel" x="472" y="218">Yes</text>
+    <rect class="box" x="260" y="232" width="380" height="58" rx="6" />
+    <text class="label" x="450" y="254" text-anchor="middle">Target enters PENDING_BROADCAST</text>
+    <text class="smalllabel" x="450" y="271" text-anchor="middle">Broadcast target ID, intercept point, deadline</text>
+
+    <line class="arrowline" x1="450" y1="290" x2="450" y2="324" />
+    <rect class="box" x="260" y="324" width="380" height="58" rx="6" />
+    <text class="label" x="450" y="346" text-anchor="middle">Candidate sensors compute bids</text>
+    <text class="smalllabel" x="450" y="363" text-anchor="middle">Bid uses home, spatial, temporal, uncertainty costs</text>
+
+    <line class="arrowline" x1="450" y1="382" x2="450" y2="416" />
+    <rect class="box" x="260" y="416" width="380" height="58" rx="6" />
+    <text class="label" x="450" y="438" text-anchor="middle">PENDING_BIDDING to PENDING_SELECTION</text>
+    <text class="smalllabel" x="450" y="455" text-anchor="middle">Build event-local assignment_cost_matrix</text>
+
+    <line class="arrowline" x1="450" y1="474" x2="450" y2="508" />
+    <polygon class="decision" points="450,508 620,556 450,604 280,556" />
+    <text class="label" x="450" y="548" text-anchor="middle">Joint conflict or</text>
+    <text class="label" x="450" y="564" text-anchor="middle">reselection needed?</text>
+
+    <line class="arrowline" x1="280" y1="556" x2="145" y2="556" />
+    <text class="smalllabel" x="216" y="546" text-anchor="middle">No</text>
+    <rect class="box" x="20" y="530" width="125" height="52" rx="6" />
+    <text class="smalllabel" x="82" y="550" text-anchor="middle">Solve current</text>
+    <text class="smalllabel" x="82" y="566" text-anchor="middle">calling target</text>
+
+    <line class="arrowline" x1="620" y1="556" x2="755" y2="556" />
+    <text class="smalllabel" x="686" y="546" text-anchor="middle">Yes</text>
+    <rect class="box" x="755" y="530" width="125" height="52" rx="6" />
+    <text class="smalllabel" x="818" y="550" text-anchor="middle">Expand affected</text>
+    <text class="smalllabel" x="818" y="566" text-anchor="middle">target set</text>
+
+    <line class="arrowline" x1="82" y1="582" x2="82" y2="636" />
+    <line class="arrowline" x1="818" y1="582" x2="818" y2="636" />
+    <line class="arrowline" x1="82" y1="636" x2="333" y2="636" />
+    <line class="arrowline" x1="818" y1="636" x2="567" y2="636" />
+    <rect class="box" x="333" y="612" width="234" height="58" rx="6" />
+    <text class="label" x="450" y="634" text-anchor="middle">Run solveInterceptorAssignments</text>
+    <text class="smalllabel" x="450" y="651" text-anchor="middle">MCMF mode or legacy baseline mode</text>
+
+    <line class="arrowline" x1="450" y1="670" x2="450" y2="704" />
+    <rect class="box" x="260" y="704" width="380" height="44" rx="6" />
+    <text class="label" x="450" y="724" text-anchor="middle">Broadcast result and update FSM</text>
+    <text class="smalllabel" x="450" y="740" text-anchor="middle">Selected sensors become INTERCEPTING / INTERCEPTOR_CANDIDATE</text>
+  </svg>
+</div>
+
+<h2>5. Experimental Design</h2>
+<p>
+The validation is organized in stages so that algorithm correctness, simulation integration, and system behavior can be evaluated separately. This is important because a full simulation run can hide whether an observed behavior comes from the assignment solver, the EKF timing, target motion, or animation state.
+</p>
+
+<table>
+  <caption>Table 2. Validation stages.</caption>
+  <tr>
+    <th>Stage</th>
+    <th>Purpose</th>
+    <th>Evidence</th>
+    <th>What it does not prove</th>
+  </tr>
+  <tr>
+    <td>Stage 1</td>
+    <td>Verify solver correctness on mock cost matrices.</td>
+    <td>Unit tests check feasible assignment, non-duplicate sensors, shortage behavior, and total-cost calculation.</td>
+    <td>Does not prove compatibility with full simulation state.</td>
+  </tr>
+  <tr>
+    <td>Stage 2</td>
+    <td>Verify adapter compatibility with simulation-shaped data.</td>
+    <td>Tests build candidate lists and cost matrices using simulation-like sensor positions, active trackers, and intercept points.</td>
+    <td>Does not prove natural event timing.</td>
+  </tr>
+  <tr>
+    <td>Stage 3</td>
+    <td>Compare MCMF and minimax under controlled conflict injection.</td>
+    <td>Two targets are forced into simultaneous <code>PENDING_SELECTION</code> so both algorithms can be compared on the same input.</td>
+    <td>Does not prove the conflict occurs naturally.</td>
+  </tr>
+  <tr>
+    <td>Stage 4</td>
+    <td>Analyze natural or reselection conflict behavior in a full simulation run.</td>
+    <td>Real log event at <code>t = 39.50 s</code> shows joint reselection and A/B assignment comparison.</td>
+    <td>Does not prove embedded real-time deployment.</td>
+  </tr>
+</table>
+
+<p>
+For fair comparison, both MCMF and the legacy minimax solver use the same calling targets, candidate sensors, and cost matrix. The only changed element is the assignment objective.
+</p>
+
+<h2>6. Results and Comparative Analysis</h2>
+
+<h3>6.1 Real Simulation Conflict Event at t = 39.50 s</h3>
+<p>
+The main real-run evidence comes from a full V46 simulation log. At <code>t = 38.90 s</code>, target 1 had already selected sensors 10 and 14 as interceptors. At <code>t = 39.50 s</code>, target 2 entered <code>PENDING_SELECTION</code>. A provisional selection for target 2 attempted to use sensor 14, but sensor 14 was already assigned as an interceptor for target 1. Therefore, target 1 was added to a joint reselection group, its intercept point was refreshed using tracker 9, and the system solved a shared assignment problem for targets 2 and 1.
+</p>
+
+<table>
+  <caption>Table 3. Top candidate bid costs from the real t = 39.50 s simulation event.</caption>
+  <tr>
+    <th>Rank</th>
+    <th>Target 2 top candidate and cost</th>
+    <th>Target 1 top candidate and cost</th>
+  </tr>
+  <tr><td>1</td><td>S14 = 0.219</td><td>S14 = 0.193</td></tr>
+  <tr><td>2</td><td>S20 = 0.285</td><td>S10 = 0.300</td></tr>
+  <tr><td>3</td><td>S13 = 0.306</td><td>S13 = 0.304</td></tr>
+  <tr><td>4</td><td>S24 = 0.324</td><td>S4 = 0.323</td></tr>
+  <tr><td>5</td><td>S18 = 0.327</td><td>S8 = 0.324</td></tr>
+  <tr><td>6</td><td>S23 = 0.334</td><td>S3 = 0.326</td></tr>
+  <tr><td>7</td><td>S15 = 0.362</td><td>S15 = 0.363</td></tr>
+  <tr><td>8</td><td>S10 = 0.377</td><td>S20 = 0.377</td></tr>
+</table>
+
+<p class="note">
+Table 3 is taken from the real simulation log at <code>t = 39.50 s</code>. The target order in this event is <code>[2, 1]</code> because target 2 triggered the new selection and target 1 was added to the joint reselection group.
+</p>
+
+<table>
+  <caption>Table 4. Real simulation assignment comparison at t = 39.50 s.</caption>
+  <tr>
+    <th>Method</th>
+    <th>Target</th>
+    <th>Selected Sensors</th>
+    <th>Individual Costs</th>
+    <th>Target Team Cost</th>
+    <th>Total Cost</th>
+  </tr>
+  <tr>
+    <td>MCMF</td>
+    <td>Target 2</td>
+    <td>S13, S20</td>
+    <td>0.306, 0.285</td>
+    <td>0.591</td>
+    <td rowspan="2">1.085</td>
+  </tr>
+  <tr>
+    <td>MCMF</td>
+    <td>Target 1</td>
+    <td>S10, S14</td>
+    <td>0.300, 0.193</td>
+    <td>0.493</td>
+  </tr>
+  <tr>
+    <td>Legacy Minimax</td>
+    <td>Target 2</td>
+    <td>S20, S13</td>
+    <td>0.285, 0.306</td>
+    <td>0.591</td>
+    <td rowspan="2">1.182</td>
+  </tr>
+  <tr>
+    <td>Legacy Minimax</td>
+    <td>Target 1</td>
+    <td>S14, S18</td>
+    <td>0.193, 0.397</td>
+    <td>0.590</td>
+  </tr>
+</table>
+
+<p>
+Both methods assign all four requested interceptor slots. The difference is objective behavior. Legacy minimax produces balanced target team costs of <code>0.591</code> and <code>0.590</code>, making the worst team cost <code>0.591</code>. MCMF produces target team costs of <code>0.591</code> and <code>0.493</code>, so its worst team cost is also <code>0.591</code> in this event, but its total cost is lower. MCMF preserves the same worst-team value while improving total network efficiency by <code>0.097</code>.
+</p>
+
+<h3>6.2 Worked Example: Why the Methods Differ</h3>
+<h4>Step 1: Conflict trigger.</h4>
+<p>
+Target 2 entered <code>PENDING_SELECTION</code> and sensor 14 appeared as its best candidate. However, sensor 14 was already assigned to target 1. Allowing target 2 to take sensor 14 would disrupt target 1's existing interception task. Therefore, the system grouped target 2 and target 1 into a joint reselection problem.
+</p>
+
+<h4>Step 2: Legacy minimax decision.</h4>
+<p>
+The legacy method evaluates non-overlapping two-sensor teams and selects the combination that minimizes the maximum team cost across targets. In this event, it assigns target 2 to sensors 20 and 13 with team cost <code>0.591</code>, and target 1 to sensors 14 and 18 with team cost <code>0.590</code>. The result is very balanced because the two team costs are almost equal.
+</p>
+
+<h4>Step 3: MCMF decision.</h4>
+<p>
+MCMF first fills all four requested interceptor slots. Then it minimizes total cost. It assigns target 2 to sensors 13 and 20 with team cost <code>0.591</code>, and target 1 to sensors 10 and 14 with team cost <code>0.493</code>. This produces a total cost of <code>1.085</code>, compared with <code>1.182</code> for legacy minimax.
+</p>
+
+<h4>Step 4: System interpretation.</h4>
+<p>
+The legacy solution is fairness-oriented: it gives both targets nearly equal team costs. The MCMF solution is system-efficiency-oriented: it keeps all requested slots filled and reduces the total network burden. In this event, MCMF does not worsen the worst team cost, but it does avoid an unnecessarily expensive assignment for target 1. This supports the argument that total-cost minimization is useful when the system objective is to preserve global WSN resources across repeated handovers.
+</p>
+
+<h3>6.3 Runtime Evidence from the Same Event</h3>
+<p>
+The runtime log for the <code>t = 39.50 s</code> event reports the following MATLAB workstation timings:
+</p>
+
+<table>
+  <caption>Table 5. MATLAB workstation runtime at t = 39.50 s.</caption>
+  <tr>
+    <th>Measurement</th>
+    <th>Runtime</th>
+    <th>Interpretation</th>
+  </tr>
+  <tr>
+    <td>Cost matrix construction</td>
+    <td>0.000732 s</td>
+    <td>Builds candidate list and bid-cost matrix for 23 candidates and 2 targets.</td>
+  </tr>
+  <tr>
+    <td>MCMF solver</td>
+    <td>0.000522 s</td>
+    <td>Selected solver runtime for the MCMF assignment.</td>
+  </tr>
+  <tr>
+    <td>MCMF-only computation</td>
+    <td>0.001254 s</td>
+    <td>Cost matrix construction plus MCMF solver.</td>
+  </tr>
+  <tr>
+    <td>Legacy minimax solver</td>
+    <td>0.043506 s</td>
+    <td>Validation-only A/B comparison runtime in MATLAB.</td>
+  </tr>
+  <tr>
+    <td>Full assignment block</td>
+    <td>0.046972 s</td>
+    <td>Includes both solvers and logging, so it is not the deployment MCMF-only time.</td>
+  </tr>
+</table>
+
+<p>
+On the workstation, MCMF-only computation is approximately <code>1.254%</code> of a <code>0.1 s</code> time step. However, this is not a deployment guarantee. It is a MATLAB prototype timing result on a workstation CPU.
+</p>
+
+<h2>7. Discussion</h2>
+
+<h3>7.1 Why Total Cost After Slot Maximization Is Used</h3>
+<p>
+The strongest argument for the proposed objective is that it matches the mission hierarchy of the simulation. The first requirement is not fairness; it is maintaining tracking feasibility by filling interceptor slots. If the system cannot assign replacement sensors, the target may be lost. Therefore, the first optimization layer is to maximize assigned slots.
+</p>
+<p>
+Once slot coverage is handled, total cost is the most appropriate secondary objective because the cost function represents system burden. A lower total assignment cost means that, across all targets, the selected sensors are collectively better positioned, less displaced from home, better timed, or supported by more reliable estimates. This is especially important in a repeated handover system because a locally fair but globally expensive assignment can reduce future availability.
+</p>
+<p>
+This does not mean minimax is wrong. Minimax is the better objective if the mission requires strict worst-target fairness. The proposed method simply chooses a different priority: do not sacrifice network-wide feasibility and efficiency unless fairness is explicitly required by the mission specification.
+</p>
+
+<h3>7.2 Embedded Runtime and Communication Budget</h3>
+<p>
+The measured MATLAB runtime should be treated as an optimistic prototype baseline. A laptop CPU running MATLAB has a different architecture from a small embedded processor. It has different cache behavior, memory bandwidth, instruction scheduling, and floating point support. A deployed implementation would run in C or C-like firmware, not MATLAB. It may use single-precision floating point, fixed point, or soft-float arithmetic depending on the target platform.
+</p>
+<p>
+The <code>0.1 s</code> time step also cannot be assigned entirely to computation. The coordinator must broadcast the handover request, receive bids from candidate sensors, run assignment, broadcast the result, and possibly receive acknowledgments. A simple event-level communication model is:
+</p>
+<div class="equation">
+  N_packets = 1 request + M bid messages + 1 result + K * N acknowledgments
+</div>
+<p>
+For the real <code>t = 39.50 s</code> event, <code>M = 23</code> candidate sensors, <code>N = 2</code> calling targets, and <code>K = 2</code> requested interceptors per target. This gives:
+</p>
+<div class="equation">
+  N_packets = 1 + 23 + 1 + 2 * 2 = 29 packets
+</div>
+<p>
+If the system assumes an optimistic <code>2 ms</code> per reliable packet transaction, based on Bitcraze's low-latency Crazyradio discussion for 2 Mbps communication without retries, then 29 sequential packet transactions would require approximately <code>58 ms</code> before collision, retry, scheduling, and control overhead are included [13]. Therefore, the realistic deadline is an end-to-end budget:
+</p>
+<div class="equation">
+  T_total = T_request + T_bid_collection + T_compute + T_result + T_ack + T_retry
+</div>
+<p>
+This means the algorithm should be described as event-triggered and plausible, not proven real-time on embedded hardware. The MCMF solver does not need to run at every timestamp. It runs when a target reaches <code>PENDING_SELECTION</code> or when joint reselection is triggered.
+</p>
+
+<h3>7.3 Crazyflie-Class Feasibility</h3>
+<p>
+Crazyflie 2.0 is a useful lower-end reference platform for this project. Its main application processor is an STM32F405, an Arm Cortex-M4 processor at 168 MHz with 192 KB SRAM and 1 MB flash [11]. ST's documentation states that the STM32F405 family includes a single-precision floating point unit and DSP instructions [12]. Therefore, Crazyflie 2.0 is not a no-FPU platform, but it is still much less capable than a 4.5 GHz workstation CPU.
+</p>
+<p>
+Using the measured MCMF-only workstation time of <code>0.001254 s</code> and a simple frequency-scaling estimate from <code>4.5 GHz</code> to <code>168 MHz</code> gives:
+</p>
+<div class="equation">
+  estimated_cycles = 0.001254 * 4.5e9 = 5.64e6 cycles<br>
+  estimated_time_at_168MHz = 5.64e6 / 168e6 = 0.0336 s
+</div>
+<p>
+This is approximately <code>33.6%</code> of a <code>0.1 s</code> time step for computation alone. Because this estimate ignores communication, firmware scheduling, sensor processing, and flight control load, it should be treated as a warning rather than a guarantee. The result suggests that Crazyflie-class execution may be possible for event-triggered assignment, but a hard <code>0.1 s</code> end-to-end guarantee has not been proven.
+</p>
+
+<h3>7.4 Decentralization Limitation</h3>
+<p>
+The current simulation should be described as temporary leader-based coordination, not fully decentralized consensus. A practical event protocol could be:
+</p>
+<ul>
+  <li>For a single-target handover, the current primary tracker of that target acts as the temporary coordinator.</li>
+  <li>For a joint conflict, the primary tracker of the target with the earliest predicted loss time acts as the coordinator.</li>
+  <li>If there is a tie, the lower target ID and then the lower sensor ID are used as tie-breakers.</li>
+  <li>If the coordinator fails or times out, the secondary tracker takes over.</li>
+  <li>If the secondary tracker also fails, the system falls back to local greedy assignment or keeps existing interceptors until the next event window.</li>
+</ul>
+<p>
+This protocol removes a permanent central controller, but it still requires one temporary event leader to collect or reconstruct the bid matrix during the assignment event. Therefore, it does not satisfy a strict no-bid-storage decentralized requirement. A stricter future version would use a distributed auction or consensus-based assignment method, where sensors exchange local winning bids and no single node stores the full bid matrix.
+</p>
+<p>
+Crazyflie peer-to-peer communication also has practical limitations. Bitcraze's P2P API documentation states that peer-to-peer communication is currently available in broadcast mode and that unicast support is intended for extension [14]. Therefore, a real Crazyflie-based decentralized implementation would require additional protocol design for addressing, acknowledgment, timeout handling, and conflict resolution.
+</p>
+
+<h2>8. Conclusion</h2>
+<p>
+This report presented an MCMF-based interceptor assignment method for cooperative multi-target tracking in a mobile WSN. The proposed method changes the assignment objective from legacy minimax fairness to slot-aware system efficiency. It first maximizes the number of assigned interceptor slots and then minimizes total assignment cost.
+</p>
+<p>
+The real simulation event at <code>t = 39.50 s</code> shows why this objective matters. Both legacy minimax and MCMF filled all four requested slots, but MCMF reduced total assignment cost from <code>1.182</code> to <code>1.085</code>. In this event, MCMF also preserved the same worst-team cost while reducing network-wide resource burden. This supports the use of MCMF when the system objective is to preserve global WSN efficiency across repeated handovers.
+</p>
+<p>
+The method is not yet proven for embedded deployment. MATLAB workstation timing is only a baseline. A Crazyflie-class 168 MHz processor may be computationally plausible for event-triggered MCMF execution, but the complete <code>0.1 s</code> deadline must include communication latency, retries, firmware scheduling, and flight-control load. The current coordination model is also temporary leader-based rather than fully decentralized. Future work should implement the assignment module in embedded C, measure processor-in-the-loop runtime, add communication-in-the-loop tests, and investigate a stricter distributed auction or consensus protocol.
+</p>
+
+<h2>References</h2>
+<p>[1] I. F. Akyildiz, W. Su, Y. Sankarasubramaniam, and E. Cayirci, "Wireless sensor networks: a survey," <em>Computer Networks</em>, vol. 38, no. 4, pp. 393-422, 2002. DOI: <a href="https://doi.org/10.1016/S1389-1286(01)00302-4">10.1016/S1389-1286(01)00302-4</a>.</p>
+<p>[2] A. Albert and L. Imsland, "Survey: mobile sensor networks for target searching and tracking," <em>Cyber-Physical Systems</em>, vol. 4, no. 2, pp. 57-98, 2018. DOI: <a href="https://doi.org/10.1080/23335777.2018.1483969">10.1080/23335777.2018.1483969</a>.</p>
+<p>[3] L. E. Parker, "Cooperative robotics for multi-target observation," <em>Intelligent Automation and Soft Computing</em>, vol. 5, no. 1, pp. 5-19, 1999. DOI: <a href="https://doi.org/10.1080/10798587.1999.10750747">10.1080/10798587.1999.10750747</a>.</p>
+<p>[4] A. Kolling and S. Carpin, "Cooperative observation of multiple moving targets: an algorithm and its formalization," <em>The International Journal of Robotics Research</em>, vol. 26, no. 9, pp. 935-953, 2007. DOI: <a href="https://doi.org/10.1177/0278364907080424">10.1177/0278364907080424</a>.</p>
+<p>[5] Y. Bar-Shalom, X. R. Li, and T. Kirubarajan, <em>Estimation with Applications to Tracking and Navigation</em>. Wiley, 2001. DOI: <a href="https://doi.org/10.1002/0471221279">10.1002/0471221279</a>.</p>
+<p>[6] S. Wen, Z. Cai, and X. Hu, "Constrained Extended Kalman Filter for target tracking in directional sensor networks," <em>International Journal of Distributed Sensor Networks</em>, 2015. DOI: <a href="https://doi.org/10.1155/2015/158570">10.1155/2015/158570</a>.</p>
+<p>[7] B. P. Gerkey and M. J. Mataric, "A formal analysis and taxonomy of task allocation in multi-robot systems," <em>The International Journal of Robotics Research</em>, vol. 23, no. 9, pp. 939-954, 2004. DOI: <a href="https://doi.org/10.1177/0278364904045564">10.1177/0278364904045564</a>.</p>
+<p>[8] D. P. Bertsekas, "Auction algorithms for network flow problems: a tutorial introduction," <em>Computational Optimization and Applications</em>, vol. 1, pp. 7-66, 1992. DOI: <a href="https://doi.org/10.1007/BF00247653">10.1007/BF00247653</a>.</p>
+<p>[9] R. K. Ahuja, T. L. Magnanti, and J. B. Orlin, <em>Network Flows: Theory, Algorithms, and Applications</em>. Prentice Hall, 1993. Publisher page: <a href="https://www.pearson.com/en-us/subject-catalog/p/Ahuja-Network-Flows-Theory-Algorithms-and-Applications/P200000003456/9780136175490">Pearson</a>.</p>
+<p>[10] H.-L. Choi, L. Brunet, and J. P. How, "Consensus-based decentralized auctions for robust task allocation," <em>IEEE Transactions on Robotics</em>, vol. 25, no. 4, pp. 912-926, 2009. DOI: <a href="https://doi.org/10.1109/TRO.2009.2022423">10.1109/TRO.2009.2022423</a>.</p>
+<p>[11] Bitcraze, "Crazyflie 2.0," product documentation. <a href="https://store.bitcraze.io/products/crazyflie-2-0">https://store.bitcraze.io/products/crazyflie-2-0</a>.</p>
+<p>[12] STMicroelectronics, "STM32F405xx/STM32F407xx product family," official product documentation. <a href="https://www.st.com/content/st_com/en/products/microcontrollers-microprocessors/stm32-32-bit-arm-cortex-mcus/stm32-high-performance-mcus/stm32f4-series/stm32f405-415/stm32f405zg.html">ST STM32F405ZG page</a>.</p>
+<p>[13] Bitcraze, "Crazyflie 2.0 radio communication," Bitcraze blog, 2015. <a href="https://www.bitcraze.io/2015/01/crazyflie-2-0-radio-communication/">https://www.bitcraze.io/2015/01/crazyflie-2-0-radio-communication/</a>.</p>
+<p>[14] Bitcraze, "Peer to Peer API," Crazyflie firmware documentation. <a href="https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/p2p_api/">https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/p2p_api/</a>.</p>
+
+<h2>Appendix A. Local Simulation Evidence Used in This Draft</h2>
+<p class="small">
+The main worked example uses the local runtime log event at <code>logs/v46-example1-runtime.log</code>, lines containing <code>[t=39.50]</code>. The algorithm implementation referenced in this draft is <code>solveInterceptorAssignmentMCMF.m</code>, where each target is expanded into interceptor slots and each candidate sensor has capacity 1.
+</p>
+
+</body>
+</html>
