@@ -1,0 +1,269 @@
+pages=8
+===== PAGE 1 =====
+MCMF-Based Interceptor Assignment for Cooperative Multi-Target Tracking in a Mobile 
+WSN 
+Yeqi Sang 
+MIE8888 Final Report 
+ 
+Abstract 
+This report studies interceptor assignment in a mobile wireless sensor network (WSN) used for cooperative multi -
+target tracking. In the original simulation (V45), conflict resolution was based on a minmax objective that attempts 
+to minimize the worst team cost among the requested targets. This objective protects the weakest target assignment, 
+but it does not directly optimize the total resource burden imposed on the sensor n etwork. The proposed (V46) 
+assignment reformulates the problem as a min-cost max-flow (MCMF) problem. The proposed assignment follows a 
+two-step objective: it first maximizes the number of interceptor sensors successfully assigned to requesting targets 
+and then minimizes the total assignment cost among assignments with the same level of coverage.  
+The report compares MCMF and the minimax method using the same candidate sensors and the same cost matrices. 
+A natural simulation conflict event at 𝑡 = [𝑝𝑙𝑎𝑐𝑒ℎ𝑜𝑙𝑑𝑒𝑟] s is used as the primary worked example. In that event, 
+MCMF assigns the optimal interceptors and reduces the total assignment cost from [placeholder] to [placeholder]. 
+These results suggest that MCMF improves global assignment efficiency during conflict resolution, while full 
+embedded deployment still requires processor-level and communication-aware validation. 
+ 
+1. Introduction 
+Mobile wireless sensor networks are useful for cooperative multi -target tracking because mobile sensors can 
+reposition themselves as targets move through the sensing field. In this project, the WSN tracks up to three 
+moving targets, and each target is intended to maintain at most two active trackers to preserve tracking continuity 
+during handover. 
+ 
+The central problem addressed in this report is interceptor assignment during proactive handover. When an active 
+tracker predicts that it will lose a target, idle or non-tracking sensors are dispatched toward a predicted 
+interception point before the target is lost. This process becomes difficult when multiple targets request 
+interceptor assignments at the same time, or when a later target attempts to select a sensor that is already 
+executing an interception task for another target. In these cases, independent target-by-target bidding can create 
+conflicts, duplicate assignments, or unnecessary reassignment of sensors. Moreover, due to limited sensor 
+availability and feasibility constraints, some targets may receive fewer than the desired maximum number of 
+interceptors. 
+ 
+The original conflict-resolution method used a minimax objective. For simultaneous interceptor assignment 
+conflicts, the minimax method attempted to select teams such that the worst target team cost was minimized. 
+This is a fairness-oriented objective: no target should receive a very poor team if a more balanced solution is 
+available. In V46, the interceptor assignment problem is formulated as a global optimization problem and solved 
+using a min-cost max-flow framework. The method first maximizes the number of requested interceptor 
+positions filled across all competing targets and subsequently minimizes the total assignment cost. This replaces 
+the fairness-oriented minmax objective with a joint assignment objective define d over all competing targets. 
+ 
+===== PAGE 2 =====
+ 
+• It reformulates interceptor selection as a global assignment problem between candidate sensors and 
+target interceptor assignment. 
+• It compares MCMF and minmax assignment using the same candidate sensors and cost matrices. 
+• It uses natural simulation evidence to show how the two objectives can make different decisions. 
+• It analyzes feasibility and communication limitations for Crazyfile 2.0 deployment. 
+ 
+2. Literature Review 
+ 
+3. System Model and Problem Formulation 
+3.1 System Model and Assumptions 
+This section models the interceptor assignment problem . Consider a WSN with N mobile sensors that cooperatively 
+track up to K targets. Each target can be assigned up to two active tracking sensors, and up to 𝑚 interceptor sensors 
+when a potential loss is predicted. 
+Each sensor,𝑖 = 1 … 𝑁, has a home position, ℎ𝑖ϵ𝑅2 and a current position 𝑠𝑖(𝑡)ϵ𝑅2. Each target, k = 1 … 𝐾, has state 
+𝑥𝑘(𝑡) = [𝑝𝑘(𝑡), 𝑣𝑘(𝑡)], where 𝑝𝑘(𝑡) is target position and 𝑣𝑘(𝑡) is the target velocity. Sensors possess identical 
+capabilities: detection radius 𝑟𝑑, maximum velocity 𝑣𝑠 and communication range 𝑟𝑐.  
+Target detection occurs when ‖𝑠𝑖(𝑡) − 𝑝𝑘(𝑡)‖ ≤ 𝑟𝑑. Upon detection, sensor 𝑖 obtains a noisy position measure of 
+target k, 𝑧𝑖𝑘(𝑡) = 𝑝𝑘(𝑡) + 𝑛(𝑡) where 𝑛(𝑡) is zero-mean measurement noise with covariance 𝑅. Throughout the 
+report, calling targets are targets that have reached PENDING_SELECTION and are requesting new interceptors. 
+Candidate sensors are eligible sensors to bid for those targets. Active trackers are the sensors currently assigned to 
+track a target and are excluded from interceptor bidding . A predicted interception point is the point to which a 
+selected interceptor is dispatched, and an interceptor assignment is the event -level pairing between a candidate 
+sensor and a calling target. 
+The system assumptions used in the remainder of the report are as follows: the workspace is planar; sensors are 
+homogeneous; assignment is event-triggered when a target reaches PENDING_SELECTION; and active trackers are 
+excluded from candidate bidding during the current event.  
+ 
+3.2 Problem Formulation and Bidding Cost 
+When one or more targets enter PENDING_SELECTION, the system defines a set of calling targets and a set of 
+candidate sensors. For each calling target, the system first predicts an interception point based on the current EKF 
+target estimate and the predicted tracker-loss point. Then for each available candidate sensor, the system calculates a 
+bidding cost to that target. The cost represents how suitable the sensor is for that target. A lower cost means the 
+sensor is a better candidate. In this report, we set each target at most have 𝑚 = 2 interceptors. 
+Let 𝑥(𝑖, 𝑘) represents if sensor 𝑖 is assigned to target k, then we can have: 
+𝑥(𝑖, 𝑘) =  {1,            𝑖𝑓 𝑠𝑒𝑛𝑠𝑜𝑟 𝑖𝑠 𝑎𝑠𝑠𝑖𝑔𝑛𝑒𝑑 𝑡𝑜 𝑡𝑎𝑟𝑔𝑒𝑡 𝑘
+0,                                                         𝑜𝑡ℎ𝑒𝑟𝑤𝑖𝑠𝑒 
+The bidding cost is: 
+𝑐(𝑖, 𝑘) = 𝑤1 𝑃_ℎ𝑜𝑚𝑒(𝑖) + 𝑤2 𝑃_𝑠𝑝𝑎𝑡𝑖𝑎𝑙(𝑖, 𝑘) + 𝑤3 𝑃_𝑡𝑒𝑚𝑝𝑜𝑟𝑎𝑙(𝑖, 𝑘)  + 𝑤4 𝑃_𝑢𝑛𝑐𝑒𝑟𝑡𝑎𝑖𝑛𝑡𝑦(𝑖, 𝑘) 
+•  𝑃_ℎ𝑜𝑚𝑒(𝑖) penalizes the displacement of a sensor from its home location.   
+Commented [YS1]: Should I use ‘hand over’ instead of 
+‘interception’ ? 
+===== PAGE 3 =====
+• 𝑃_𝑠𝑝𝑎𝑡𝑖𝑎𝑙(𝑖, 𝑘) penalizes the distance from the sensor to the target intercept point.  
+• 𝑃_𝑡𝑒𝑚𝑝𝑜𝑟𝑎𝑙(𝑖, 𝑘) penalizes poor arrival timing relative to the target motion. 
+• 𝑃_𝑢𝑛𝑐𝑒𝑟𝑡𝑎𝑖𝑛𝑡𝑦(𝑖, 𝑘) penalizes low shared confidence in the target estimate. 
+The generalized interceptor assignment problem is defined in two steps. First, it maximizes the total number of 
+requested interceptor positions filled:      
+𝑚𝑎𝑥 ∑ ∑ 𝑥(𝑖, 𝑘)
+𝑖∈𝑆𝑘∈𝐾
+ 
+Then, among all assignments that achieve this maximum value, it minimizes the total assignment cost:  
+𝑚𝑖𝑛 ∑ ∑ 𝑐(𝑖, 𝑘)𝑥(𝑖, 𝑘)
+𝑖∈𝑆𝑘∈𝐾
+ 
+Subject to  
+∑ 𝑥(𝑖, 𝑘)
+𝐾
+𝑘
+≤ 1, ∀ 𝑖 ∈ 𝑁 
+∑ 𝑥(𝑖, 𝑘)
+𝑁
+𝑖
+≤ 𝑚, ∀ 𝑘 ∈ 𝐾 
+𝑥(𝑖, 𝑘) ∈ {0, 1}, ∀ 𝑖 ∈ 𝑁, ∀ 𝑘 ∈ 𝐾 
+The first constraint ensures that each candidate sensor can be assigned to at most one target in the current event. The 
+second constraint ensures that each calling target receives at most  𝑚 interceptor assignments.  
+ 
+4. Proposed MCMF-Based Assignment Method 
+4.1 Assignment Workflow 
+The MCMF-based assignment procedure begins when a target enters PENDING_SELECTION. At this point, the 
+target is marked as a calling target. For each calling target, the system predicts interception points, constructs the 
+available candidate sensors set and evaluates one bidding cost for each candidate sensor and each calling target pa ir. 
+If a new selection reuses a sensor already assigned to another target, the affected targets are grouped into a joint 
+reselection event. The shared assignment is then solved once, and the selected interceptors are written back into the 
+sensor-level FSM states. 
+===== PAGE 4 =====
+ 
+Figure1: Interceptor Assignment Workflow for Multiple Targets 
+Therefore, when multiple targets request interceptors at the same time, the system builds a sensor -target cost table. 
+Each row represents one available candidate sensor, and each column represents  the bidding cost for each target. The 
+value in each cell is the bidding cost of assigning that sensor to that target. A lower cost means that the sensor is 
+more suitable for that target. 
+ 
+3.1 Example 
+Table 1 shows an example with two targets, T1 and T2, and five available candidate sensors: S5, S6, S7, S8, and S9.  
+Candidate Sensor Bidding cost for Target 1 Bidding Cost for Target 2 
+S5 0.219 0.193 
+S6 0.285 0.377 
+S7 0.306 0.304 
+S8 0.362 0.306 
+S9 0.377 0.300 
+Table 1: cost matrix for Section 2.1 example 
+In this example, each target requires two interceptor sensors. Therefore, the system must make four assignments in 
+total: two sensors for T1 and two sensors for T2. These four required interceptor positions can be described as T1 
+Interceptor 1, T1 Interceptor 2, T2 Interceptor 1, and T2 Interceptor 2. 
+Each candidate sensor can be selected at most once. Therefore, the algorithm cannot simply choose the two lowest -
+cost sensors for each target independently, because the same sensor may be selected by more than one target based 
+on the bidding result. Instead, the algorithm evaluates the combined assignment for all requesting targets and selects 
+a non-overlapping set of sensors with the lowest global total bidding cost. Figure 2 illustrates the sensor-target 
+assignment structure for interceptor selection. 
+
+===== PAGE 5 =====
+ 
+Figure 2. Sensor-target assignment structure for interceptor selection 
+In this example, s5 has the lowest bidding cost for both t1 and t2. If t1 selects first, it may choose s5 and s6, because 
+these are the two lowest-cost candidates for t1. Then t2 must select from the remaining sensors, such as s7 and s9. 
+This target-by-target assignment gives: 
+t1: s5 and s6, cost = 0.219 + 0.285 = 0.504 
+t2: s7 and s9, cost = 0.300 + 0.304 = 0.604 
+Total cost = 1.108 
+ 
+However, this is not the best global assignment. The global assignment method compares the total cost across both 
+targets and selects a non-overlapping assignment with the lowest combined cost. In this case, it assigns s6 and s7 to 
+t1, and s5 and s9 to t2: 
+t1: s6 and s7, cost = 0.285 + 0.306 = 0.591 
+t2: s5 and s9, cost = 0.193 + 0.300 = 0.493 
+Total cost = 1.084 
+Therefore, the global assignment reduces the total cost from 1.108 to 1.084 while ensuring that each sensor is 
+assigned to only one target. 
+ 
+4.3 Limitation of MCMF Objective 
+ 
+4.4 Feasibility Analysis on CrazyFile and a distribution system ..  
+ 
+5. Simulation Results and Comparative Analysis 
+5.1 Simulation Setup and Comparison Protocol 
+5.2 Natural Simulation Comparative Result 
+
+===== PAGE 6 =====
+Figure 5 shows a full simulation from example_V45_V38_b_Yeqi.m (V45), using the original min-max conflict 
+resolution strategy.to solve the conflict. In V45, conflicts are only solved when multiple targets enter the 
+PENDING_SELECTION state at the exact same simulation timestamp.  
+ 
+Figure5: Full simulation from V45(example_V45_V38_b_Yeqi.m) 
+After observing the simulation more closely, I found an addition conflict case. At t=38.9, target 1 selected sensor 10 
+and sensor 14 as its interceptors. Sensor 14 was assigned to move toward the predicted interception point for target 
+1. However, at t=39.5, target 2 also entered the PENDING_SELECTION state. During this later selection process, 
+target 2 selected sensor 20 and took sensor 14 away from target 1, even though sensor 14 was already executing an 
+interception task for target 1. This behavior is shown is Figure 6.  
+ 
+Figure6: t=40.1 for V45 simulation. Target 2 took over sensor 14 from Target 1. 
+This is an interesting and important observation because the system is a discrete -event system. Although the two 
+targets did not enter PENDING_SELECTION at the exact same timestamp, the later selection by target 2 still 
+
+===== PAGE 7 =====
+created a conflict with the existing interceptor assignment of target 1. Therefore, this case should also be treated as a 
+conflict event. 
+To address this issue, I added a new conflict-handling mechanism in example_V46_Yeqi.m(V46). In V46, when a 
+target attempts to select an interceptor that is already assigned to another target, the system identifies this as an inter -
+target interceptor conflict. Instead of allowing the new target to simply take the sensor away, the affected targets are 
+grouped together, and a new round of selection is performed across all of them. In this situation, the MCMF 
+formulation arises naturally: the conflicting targets and their candidate interceptors form a shared assignment 
+problem. By solving this problem in a global scope, the system can determine the minimum -cost combination of 
+interception assignments for both targets, rather than optimizing each target independ ently. This allows the final 
+interceptor allocation to be globally optimal across the affected group of targets .   
+Furthermore, when an existing assignment is disrupted, the original target’s interception point may no longer be 
+optimal. Therefore, for Target 1 in this case, the interception point must be recalculated before performing the 
+updated selection. This allows the reassignment process to use the latest target prediction and improves the 
+likelihood of successful interception. 
+ 
+ 
+Figure7: t=40.1 for V46 simulation. Target 2 now employes sensor 13 and sensor 20, instead of taking over sensor 14 from Target 1 
+Figure 7 shows the result after applying the V46 fix. At t = 39.5 s, Target 2 no longer takes Sensor 14 away from 
+Target 1. Instead, the updated global selection assigns Sensor 13 and Sensor 20 to Target 2, while Target 1 retains its 
+assigned interceptors. This confirms that the revised conflict -resolution logic prevents an active interception 
+assignment from being overwritten by a later target selection.  
+ 
+ 
+MinMax V .S. MCMF on Interceptor Assignment Conflict 
+Commented [NNS2]: What if sensor 14 is the best 
+option for Target 2? Does your algorithm allow sensor 14 
+to be reassigned to Target 2 if that produces a lower total 
+cost, even if it means Target 1 loses it and gets reassigned 
+to something else? Or does it always protect Target 1's 
+existing assignment? 
+Commented [YS3R2]: From Figure 7, yes, sensor 14 is 
+the best option for target 2. 
+ 
+In V45,Target 1 employed sensor 14 first as interceptor. 
+Later Target 2 requests interceptors, Sensor 14 can still be 
+selected by Target 2 because the candidate filtering only 
+excludes active trackers. Existing interceptor assignments 
+for Target 1 are not protected. As a result, Target 2 takes 
+Sensor 14 away from Target 1, even though Sensor 14 is 
+already moving toward Target 1's predicted interception 
+point. 
+ 
+This creates an inter-target assignment conflict. Target 1 
+loses one of its selected interceptors, which increases its 
+risk of losing tracking coverage. 
+ 
+In V46, this situation is handled differently. When a newly 
+requesting target attempts to select a sensor that is 
+already assigned as an interceptor for another target, both 
+affected targets are included in a joint reassignment 
+process. The algorithm then evaluates the combined 
+bidding cost for Target 1 and Target 2 together and selects 
+the lowest-cost non-overlapping assignment. In this way, 
+V46 protect  Target 1's existing assignment if Target 1's 
+existing assignment is still part of the best global solution. 
+Otherwise, Target 1 is assigned a new available 
+interceptor through the joint reassignment process. 
+===== PAGE 8 =====
+ 
+Figure8: Full simulation from V46(example_V46_Yeqi.m) 
+Figure 8 shows the full simulation result from V46 after introducing the updated conflict -resolution mechanism. At t 
+= 39.5 s, Target 1 and Target 2 trigger an assignment conflict, causing the system to perform a joint reassignment 
+process to find a better global interceptor allocation. 
+ 
+Method Target Selected Sensors Individual Costs Target Total Cost Total Cost 
+MinMax Target 1 S14, S18 0.193, 0.397 0.590 1.181 
+MinMax Target 2 S13, S20 0.306, 0.285 0.591 
+MCMF Target 1 S10, S14 0.300, 0.193 0.493 1.084 
+MCMF Target 2 S13, S20 0.306, 0.285 0.591 
+Table 4: Interceptor Assignment Comparison Between MinMax and MCMF 
+Table 4 summarizes the interceptor assignment results produced by MinMax and MCMF for the conflict event at  t = 
+39.5. Overall, MCMF reduces the total assignment cost from  1.181 to 1.084, showing that it can find a better global 
+assignment in this conflict case compared with Minmax. 
+5.3 Crazyfile Feasibility Analysis 
+ 
+6. Conclusion 
+ 
+
