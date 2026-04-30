@@ -156,34 +156,34 @@ noise = 0.01;
 
 waypoints_list = cell(num_targets, 1);
 
-% EXAMPLE 1
-waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
-waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
+% % EXAMPLE 1
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+% waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
 
-% Different speeds per target
-target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
-% Different entry times
-target_start_time = [0.0, 0.0];  % Staggered entry times
-
-% Initialize with time lag - Target 2 starts later
-target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = waypoints_list{2}(1, :);
-target_trajectories{1} = target_positions(1, :);
-target_trajectories{2} = target_positions(2, :);
-
-% % Same-direction trajectories with time lag
-% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];  % lower left to upper right
-% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
-
-% target_velocities = [1.0, 1.0]; 
-% % Add time lag control
-% target_start_time = [0, 4.0];  % Target 2 starts 2 seconds later
+% % Different speeds per target
+% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% % Different entry times
+% target_start_time = [0.0, 0.0];  % Staggered entry times
 
 % % Initialize with time lag - Target 2 starts later
 % target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-% target_positions(2, :) = [-15, 0];  % Target 2 starts off-screen, will enter later
+% target_positions(2, :) = waypoints_list{2}(1, :);
 % target_trajectories{1} = target_positions(1, :);
 % target_trajectories{2} = target_positions(2, :);
+
+% Same-direction trajectories with time lag
+waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];  % lower left to upper right
+waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
+
+target_velocities = [1.0, 1.0]; 
+% Add time lag control
+target_start_time = [0, 4.0];  % Target 2 starts 2 seconds later
+
+% Initialize with time lag - Target 2 starts later
+target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+target_positions(2, :) = [-15, 0];  % Target 2 starts off-screen, will enter later
+target_trajectories{1} = target_positions(1, :);
+target_trajectories{2} = target_positions(2, :);
 
 
 
