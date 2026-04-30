@@ -54,6 +54,9 @@ cost_matrix = [0.6; 0.2; 0.4];
 
 verifyEqual(testCase, sort(assignments{1}(:))', [9 10]);
 verifyEqual(testCase, diagnostics.algorithm, 'LEGACY');
+verifyFalse(testCase, diagnostics.is_valid_two_target_minimax_case);
+verifyEqual(testCase, diagnostics.comparison_mode, 'SINGLE_TARGET_GREEDY');
+verifyEqual(testCase, diagnostics.worst_team_cost, 0.6, 'AbsTol', 1e-10);
 end
 
 function testLegacyMultiTargetExactTeamSizeRemainsAvailable(testCase)
@@ -68,4 +71,27 @@ verifyEqual(testCase, sort(assignments{1}(:))', [4 5]);
 verifyEqual(testCase, assignments{2}, []);
 verifyEqual(testCase, diagnostics.assigned_slots_total, 2);
 verifyEqual(testCase, diagnostics.algorithm, 'LEGACY');
+verifyFalse(testCase, diagnostics.is_valid_two_target_minimax_case);
+verifyEqual(testCase, diagnostics.comparison_mode, 'TWO_TARGET_GREEDY_INSUFFICIENT_CANDIDATES');
+verifyEqual(testCase, diagnostics.worst_team_cost, 0.3669, 'AbsTol', 1e-10);
+end
+
+function testLegacyDiagnosticsMarkTwoTargetMinimaxCase(testCase)
+calling_targets = [1; 2];
+candidates = [1; 2; 3; 4];
+cost_matrix = [0.1, 0.1; ...
+               0.2, 0.2; ...
+               1.0, 10.0; ...
+               10.0, 1.0];
+
+[assignments, diagnostics] = solveInterceptorAssignments(calling_targets, candidates, cost_matrix, 2, false);
+
+verifyEqual(testCase, diagnostics.algorithm, 'LEGACY');
+verifyTrue(testCase, diagnostics.used_two_target_minimax);
+verifyTrue(testCase, diagnostics.is_valid_two_target_minimax_case);
+verifyEqual(testCase, diagnostics.comparison_mode, 'TWO_TARGET_MINIMAX_TOP8');
+verifyEqual(testCase, diagnostics.assigned_slots_total, 4);
+verifyEqual(testCase, max(diagnostics.assignment_costs_per_target), diagnostics.worst_team_cost, 'AbsTol', 1e-10);
+verifyEqual(testCase, diagnostics.worst_team_cost, 1.2, 'AbsTol', 1e-10);
+verifyEqual(testCase, sort([assignments{1}(:); assignments{2}(:)])', [1 2 3 4]);
 end

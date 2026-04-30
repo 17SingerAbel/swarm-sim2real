@@ -27,7 +27,7 @@ assignment_costs_per_target = zeros(num_targets, 1);
 
 if isempty(candidates) || isempty(calling_targets)
     diagnostics = buildLegacyDiagnostics(assignments, assigned_slots_per_target, ...
-        assignment_costs_per_target, slots_per_target);
+        assignment_costs_per_target, slots_per_target, 'EMPTY', false);
     diagnostics.algorithm = 'LEGACY';
     return;
 end
@@ -39,22 +39,28 @@ if num_targets == 1
     assignments{1} = candidates(chosen)';
     assigned_slots_per_target(1) = num_to_assign;
     assignment_costs_per_target(1) = sum(sorted_costs(1:num_to_assign));
+    comparison_mode = 'SINGLE_TARGET_GREEDY';
+    used_two_target_minimax = false;
 else
-    [assignments, assigned_slots_per_target, assignment_costs_per_target] = ...
+    [assignments, assigned_slots_per_target, assignment_costs_per_target, ...
+        comparison_mode, used_two_target_minimax] = ...
         solveMultiTargetLegacy(candidates, cost_matrix, slots_per_target);
 end
 
 diagnostics = buildLegacyDiagnostics(assignments, assigned_slots_per_target, ...
-    assignment_costs_per_target, slots_per_target);
+    assignment_costs_per_target, slots_per_target, comparison_mode, ...
+    used_two_target_minimax);
 diagnostics.algorithm = 'LEGACY';
 end
 
-function [assignments, assigned_slots_per_target, assignment_costs_per_target] = solveMultiTargetLegacy(candidates, cost_matrix, slots_per_target)
+function [assignments, assigned_slots_per_target, assignment_costs_per_target, comparison_mode, used_two_target_minimax] = solveMultiTargetLegacy(candidates, cost_matrix, slots_per_target)
 num_targets = size(cost_matrix, 2);
 num_candidates = numel(candidates);
 assignments = cell(num_targets, 1);
 assigned_slots_per_target = zeros(num_targets, 1);
 assignment_costs_per_target = zeros(num_targets, 1);
+comparison_mode = 'MULTI_TARGET_GREEDY';
+used_two_target_minimax = false;
 
 team_size = min(slots_per_target, num_candidates);
 best_teams = cell(num_targets, 1);
@@ -82,7 +88,21 @@ conflicts_exist = numel(unique(all_assigned)) ~= numel(all_assigned);
 if conflicts_exist && num_targets == 2 && slots_per_target == 2 && num_candidates >= num_targets * slots_per_target
     [assignments, assigned_slots_per_target, assignment_costs_per_target] = ...
         solveTwoTargetMinimaxLegacy(candidates, cost_matrix);
+    comparison_mode = 'TWO_TARGET_MINIMAX_TOP8';
+    used_two_target_minimax = true;
     return;
+end
+
+if num_targets == 2 && slots_per_target == 2
+    if ~conflicts_exist
+        comparison_mode = 'TWO_TARGET_GREEDY_NO_CONFLICT';
+    else
+        comparison_mode = 'TWO_TARGET_GREEDY_INSUFFICIENT_CANDIDATES';
+    end
+elseif num_targets ~= 2
+    comparison_mode = 'MULTI_TARGET_GREEDY_NONMINIMAX';
+elseif slots_per_target ~= 2
+    comparison_mode = 'MULTI_TARGET_GREEDY_NONSTANDARD_TEAM_SIZE';
 end
 
 used_candidates = [];
@@ -153,7 +173,7 @@ assigned_slots_per_target = cellfun(@numel, assignments);
 assignment_costs_per_target = best_team_costs(:);
 end
 
-function diagnostics = buildLegacyDiagnostics(assignments, assigned_slots_per_target, assignment_costs_per_target, slots_per_target)
+function diagnostics = buildLegacyDiagnostics(assignments, assigned_slots_per_target, assignment_costs_per_target, slots_per_target, comparison_mode, used_two_target_minimax)
 diagnostics = struct();
 diagnostics.assignments = assignments;
 diagnostics.assigned_slots_per_target = assigned_slots_per_target;
@@ -163,4 +183,14 @@ diagnostics.requested_slots_total = numel(assignments) * slots_per_target;
 diagnostics.assigned_slots_total = sum(assigned_slots_per_target);
 diagnostics.total_cost = sum(assignment_costs_per_target);
 diagnostics.reduced_cost = diagnostics.total_cost;
+diagnostics.comparison_mode = comparison_mode;
+diagnostics.used_two_target_minimax = used_two_target_minimax;
+diagnostics.is_valid_two_target_minimax_case = used_two_target_minimax;
+
+assigned_costs = assignment_costs_per_target(assigned_slots_per_target > 0);
+if isempty(assigned_costs)
+    diagnostics.worst_team_cost = 0;
+else
+    diagnostics.worst_team_cost = max(assigned_costs);
+end
 end
