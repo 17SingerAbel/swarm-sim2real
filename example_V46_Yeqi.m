@@ -528,7 +528,7 @@ hold on; grid on; axis equal;
 xlim([-10, 80]);
 ylim([-15, 60]);
 xlabel('X (unit)'); ylabel('Y (unit)');
-title('WSN FSM three Target Tracking - Time: 0.0 s, System State: IDLE');
+title('WSN FSM two target tracking - Time: 0.0 s, System State: IDLE');
 
 % Plot sensor grid
 th = 0:pi/50:2*pi;
@@ -552,11 +552,42 @@ end
 target_handles = gobjects(num_targets, 1);
 trajectory_handles = gobjects(num_targets, 1);
 target_colors = {'r', 'g', 'b', 'm', 'c', 'k'};  % Support up to 6 targets
+interceptor_target_colors = {[1, 0.5, 0], 'g', [0.5, 0.5, 0.5], 'm', 'c', 'k'};
 
 for t = 1:num_targets
     target_handles(t) = plot(target_positions(t,1), target_positions(t,2), [target_colors{t} '*'], 'MarkerSize', 10);
     trajectory_handles(t) = plot(target_positions(t,1), target_positions(t,2), [target_colors{t} '-'], 'LineWidth', 1);
 end
+
+% Create legend at initialization so it is visible throughout the simulation.
+legend_handles = [];
+legend_labels = {};
+
+for target_id = 1:num_targets
+    h_target = plot(NaN, NaN, [target_colors{target_id} '*'], 'MarkerSize', 10);
+    h_target_path = plot(NaN, NaN, [target_colors{target_id} '-'], 'LineWidth', 1);
+    legend_handles = [legend_handles, h_target, h_target_path];
+    legend_labels{end+1} = sprintf('Target %d', target_id);
+    legend_labels{end+1} = sprintf('Target %d Path', target_id);
+end
+
+h_primary_tracker = plot(NaN, NaN, 'bo', 'MarkerSize', 9, 'MarkerFaceColor', 'r');
+h_secondary_tracker = plot(NaN, NaN, 'bo', 'MarkerSize', 8, 'MarkerFaceColor', [0.8, 0, 0]);
+h_returning_home = plot(NaN, NaN, 'bo', 'MarkerSize', 6, 'MarkerFaceColor', 'm');
+h_detecting = plot(NaN, NaN, 'bo', 'MarkerSize', 7, 'MarkerFaceColor', 'c');
+h_normal = plot(NaN, NaN, 'bo', 'MarkerSize', 6, 'MarkerFaceColor', [0, 0, 0.8]);
+
+for target_id = 1:num_targets
+    h_interceptor_target = plot(NaN, NaN, 'bo', 'MarkerSize', 7, ...
+        'MarkerFaceColor', interceptor_target_colors{target_id}, 'MarkerEdgeColor', interceptor_target_colors{target_id});
+    legend_handles = [legend_handles, h_interceptor_target];
+    legend_labels{end+1} = sprintf('Target %d Interceptor', target_id);
+end
+
+legend_handles = [legend_handles, h_primary_tracker, h_secondary_tracker, h_returning_home, h_detecting, h_normal];
+legend_labels = [legend_labels, {'Primary Tracker', 'Secondary Tracker', 'Returning Home', 'Detecting', 'Normal Sensor'}];
+lgd = legend(legend_handles, legend_labels, 'Location', 'northeastoutside');
+lgd.AutoUpdate = 'off';
 
 status_text = text(-12, -10, 'System: IDLE | No targets detected', 'BackgroundColor', 'white', 'EdgeColor', 'black', 'Margin', 3, 'FontSize', 12);
 
@@ -2396,9 +2427,15 @@ for t = 1:simulation_time/dt
                     end
                     
                 case SENSOR_STATES.INTERCEPTING
-                    % Interceptor candidate - ORANGE
-                    set(node_handles(i), 'MarkerFaceColor', [1, 0.5, 0], 'MarkerEdgeColor', [1, 0.5, 0], 'MarkerSize', 7);
-                    set(circle_handles(i), 'FaceColor', [1, 0.5, 0], 'FaceAlpha', 0.15, 'EdgeColor', [1, 0.5, 0]);
+                    % Color interceptors by their currently assigned target.
+                    assigned_target = interceptor_assigned_target(i);
+                    if assigned_target >= 1 && assigned_target <= numel(interceptor_target_colors)
+                        interceptor_color = interceptor_target_colors{assigned_target};
+                    else
+                        interceptor_color = [1, 0.5, 0];
+                    end
+                    set(node_handles(i), 'MarkerFaceColor', interceptor_color, 'MarkerEdgeColor', interceptor_color, 'MarkerSize', 7);
+                    set(circle_handles(i), 'FaceColor', interceptor_color, 'FaceAlpha', 0.15, 'EdgeColor', interceptor_color);
                     
                 case SENSOR_STATES.RETURNING_HOME
                     % Returning home - MAGENTA
@@ -2475,7 +2512,7 @@ for t = 1:simulation_time/dt
         set(status_text, 'String', status);
         
         % Update title
-        title(sprintf('WSN FSM three Target Tracking - Time: %.1f s, System State: %s', current_time, system_state));
+        title(sprintf('WSN FSM two target tracking - Time: %.1f s, System State: %s', current_time, system_state));
         
         drawnow;
     end
@@ -3042,34 +3079,7 @@ function plotSingleSensorTrajectory(sensor_id, sensor_trajectories, original_pos
     legend(legend_handles, legend_labels, 'Location', 'eastoutside', 'FontSize', 10);
 end
 
-%% Updated Legend for three Target Simulation
-figure(fig);
-
-% Create dummy plot handles for legend - dynamic for multiple targets
-legend_handles = [];
-legend_labels = {};
-
-% Add target handles dynamically
-for target_id = 1:num_targets
-    h_target = plot(NaN, NaN, [target_colors{target_id} '*'], 'MarkerSize', 10);
-    h_target_path = plot(NaN, NaN, [target_colors{target_id} '-'], 'LineWidth', 1);
-    legend_handles = [legend_handles, h_target, h_target_path];
-    legend_labels{end+1} = sprintf('Target %d', target_id);
-    legend_labels{end+1} = sprintf('Target %d Path', target_id);
-end
-
-% Add sensor state handles
-h_primary_tracker = plot(NaN, NaN, 'bo', 'MarkerSize', 9, 'MarkerFaceColor', 'r');
-h_secondary_tracker = plot(NaN, NaN, 'bo', 'MarkerSize', 8, 'MarkerFaceColor', [0.8, 0, 0]);
-h_interceptor = plot(NaN, NaN, 'bo', 'MarkerSize', 7, 'MarkerFaceColor', [1, 0.5, 0]);
-h_returning_home = plot(NaN, NaN, 'bo', 'MarkerSize', 6, 'MarkerFaceColor', 'm');
-h_detecting = plot(NaN, NaN, 'bo', 'MarkerSize', 7, 'MarkerFaceColor', 'c');
-h_normal = plot(NaN, NaN, 'bo', 'MarkerSize', 6, 'MarkerFaceColor', [0, 0, 0.8]);
-
-legend_handles = [legend_handles, h_primary_tracker, h_secondary_tracker, h_interceptor, h_returning_home, h_detecting, h_normal];
-legend_labels = [legend_labels, {'Primary Tracker', 'Secondary Tracker', 'Interceptor', 'Returning Home', 'Detecting', 'Normal Sensor'}];
-
-legend(legend_handles, legend_labels, 'Location', 'northeastoutside');
+% Legend is initialized before the simulation loop so it stays visible during playback.
 
 % fprintf('\n=== three TARGET SIMULATION COMPLETE ===\n');
 % fprintf('Enhanced FSM-based three target cooperative tracking simulation finished.\n');

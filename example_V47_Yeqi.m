@@ -54,7 +54,7 @@
 
 % V38_b: Interception logics is updated, no wobbling.
 
-% V46_Yeqi: Added USE_MCMF_ASSIGNMENT to support A/B testing between the
+% V46_Yeqi: Added USE_GLOBAL_ASSIGNMENT to support A/B testing between the
 % legacy assignment method and the MCMF-based assignment method. When a
 % target attempts to select an interceptor already assigned to another target,
 % a joint conflict-resolution process is triggered for the affected targets.
@@ -123,7 +123,10 @@ communication_range = node_spacing * 1.5;  % units- we are actually broadcasting
 EKF_VELOCITY_CONVERGENCE_THRESHOLD = 0.006;  % Velocity variance threshold (units²/s²)
 PREDICTION_STABILITY_THRESHOLD = 0.5;        % Time difference threshold (TUs)
 MIN_STABLE_PREDICTIONS = 2;                  % Need at least 2 consecutive stable predictions
-USE_MCMF_ASSIGNMENT = true;                  % V46 switch for A/B testing against legacy assignment
+USE_GLOBAL_ASSIGNMENT = true;                  % V46 switch for A/B testing against legacy assignment
+
+assignment_mode_labels = {'LEGACY_ASSIGNMENT', 'GLOBAL_ASSIGNMENT'};
+assignment_mode_label = assignment_mode_labels{1 + double(USE_GLOBAL_ASSIGNMENT)};
 
 % Grid dimensions (staggered hex grid, including sensor coverage radius)
 nx = grid_size;   % number of columns
@@ -134,6 +137,7 @@ wsn_height = (ny-1)*node_spacing*sqrt(3)/2 + 2*a;            % +a bottom, +a top
 
 fprintf(fid, '[t= 0.00][INIT] Node spacing: %.2f, Communication range: %.2f\n', node_spacing, communication_range);
 fprintf(fid, '[t= 0.00][INIT] WSN dimensions: %.2f x %.2f\n', wsn_width, wsn_height);
+fprintf(fid, '[t= 0.00][INIT] USE_GLOBAL_ASSIGNMENT: %d (%s)\n', USE_GLOBAL_ASSIGNMENT, assignment_mode_label);
 
 %% Initialize FSM State Variables
 % System state
@@ -146,12 +150,34 @@ sensor_states = repmat({SENSOR_STATES.IDLE}, num_nodes, 1);
 sensor_roles = repmat({SENSOR_ROLES.NONE}, num_nodes, 1);
 sensor_state_history = cell(num_nodes, 1);
 
-% NEW: three target setup
-num_targets = 2;  % Or make this configurable
+num_targets = 3;  % Or make this configurable
 waypoints_list = cell(num_targets, 1);
-% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];
-% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692];
-% waypoints_list{3} = [0,15; 15,20; 30,25; 45,30; 60,35; 70,40; 80,45];  % Third target path
+waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
+waypoints_list{3} = [0,9.692; 10,9.692; 25,13.692; 36,19.692; 48,32.692; 55,42.692; 70,54.692]; % third target path
+
+% Different speeds per target
+target_velocities = [1.0, 1.1, 1.2];  % Target 1: normal, Target 2: slower, Target 3: faster
+% target_velocities = [1.0, 1.3, 1.5];
+
+% Different entry times
+target_start_time = [0, 4.0, 6.5];  % Staggered entry times
+
+% Target state arrays
+target_positions = zeros(num_targets, 2);
+target_trajectories = cell(num_targets, 1);
+current_waypoint_idx = ones(num_targets, 1);
+noise = 0.01;
+
+% Initialize with time lag - Target 2 starts later
+target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+target_positions(2, :) = waypoints_list{2}(1, :);  % Target 2 starts immediately
+target_positions(3, :) = waypoints_list{3}(1, :);  % Target 3 starts immediately
+target_positions(3, :) = [-15, 0];  % Target 3 starts off-screen, will enter later
+target_trajectories{1} = target_positions(1, :);
+target_trajectories{2} = target_positions(2, :);
+target_trajectories{3} = target_positions(3, :);
+
 
 
 % Target state arrays
@@ -161,22 +187,22 @@ current_waypoint_idx = ones(num_targets, 1);
 noise = 0.01;
 
 
-waypoints_list = cell(num_targets, 1);
 
-% EXAMPLE 1
-waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
-waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
 
-% Different speeds per target
-target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
-% Different entry times
-target_start_time = [0.0, 0.0];  % Staggered entry times
+% % EXAMPLE 1
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+% waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
 
-% Initialize with time lag - Target 2 starts later
-target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = waypoints_list{2}(1, :);
-target_trajectories{1} = target_positions(1, :);
-target_trajectories{2} = target_positions(2, :);
+% % Different speeds per target
+% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
+% % Different entry times
+% target_start_time = [0.0, 0.0];  % Staggered entry times
+
+% % Initialize with time lag - Target 2 starts later
+% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+% target_positions(2, :) = waypoints_list{2}(1, :);
+% target_trajectories{1} = target_positions(1, :);
+% target_trajectories{2} = target_positions(2, :);
 
 % % Example 2
 % % Same-direction trajectories with time lag
@@ -331,7 +357,7 @@ params = struct('a', a, 'node_spacing', node_spacing, 'dt', dt, ...
     'PREDICTION_STABILITY_THRESHOLD', PREDICTION_STABILITY_THRESHOLD, ...
     'MIN_STABLE_PREDICTIONS', MIN_STABLE_PREDICTIONS, ...
     'SAFETY_MARGIN', SAFETY_MARGIN, 'rng_seed', 0, ...
-    'USE_MCMF_ASSIGNMENT', USE_MCMF_ASSIGNMENT);
+    'USE_GLOBAL_ASSIGNMENT', USE_GLOBAL_ASSIGNMENT);
 
 % Track covariance history for analysis
 covariance_history = struct();
@@ -528,7 +554,7 @@ hold on; grid on; axis equal;
 xlim([-10, 80]);
 ylim([-15, 60]);
 xlabel('X (unit)'); ylabel('Y (unit)');
-title('WSN FSM three Target Tracking - Time: 0.0 s, System State: IDLE');
+title('WSN FSM three target tracking - Time: 0.0 s, System State: IDLE');
 
 % Plot sensor grid
 th = 0:pi/50:2*pi;
@@ -552,11 +578,42 @@ end
 target_handles = gobjects(num_targets, 1);
 trajectory_handles = gobjects(num_targets, 1);
 target_colors = {'r', 'g', 'b', 'm', 'c', 'k'};  % Support up to 6 targets
+interceptor_target_colors = {[1, 0.5, 0], 'g', [0.5, 0.5, 0.5], 'm', 'c', 'k'};
 
 for t = 1:num_targets
     target_handles(t) = plot(target_positions(t,1), target_positions(t,2), [target_colors{t} '*'], 'MarkerSize', 10);
     trajectory_handles(t) = plot(target_positions(t,1), target_positions(t,2), [target_colors{t} '-'], 'LineWidth', 1);
 end
+
+% Create legend at initialization so it is visible throughout the simulation.
+legend_handles = [];
+legend_labels = {};
+
+for target_id = 1:num_targets
+    h_target = plot(NaN, NaN, [target_colors{target_id} '*'], 'MarkerSize', 10);
+    h_target_path = plot(NaN, NaN, [target_colors{target_id} '-'], 'LineWidth', 1);
+    legend_handles = [legend_handles, h_target, h_target_path];
+    legend_labels{end+1} = sprintf('Target %d', target_id);
+    legend_labels{end+1} = sprintf('Target %d Path', target_id);
+end
+
+h_primary_tracker = plot(NaN, NaN, 'bo', 'MarkerSize', 9, 'MarkerFaceColor', 'r');
+h_secondary_tracker = plot(NaN, NaN, 'bo', 'MarkerSize', 8, 'MarkerFaceColor', [0.8, 0, 0]);
+h_returning_home = plot(NaN, NaN, 'bo', 'MarkerSize', 6, 'MarkerFaceColor', 'm');
+h_detecting = plot(NaN, NaN, 'bo', 'MarkerSize', 7, 'MarkerFaceColor', 'c');
+h_normal = plot(NaN, NaN, 'bo', 'MarkerSize', 6, 'MarkerFaceColor', [0, 0, 0.8]);
+
+for target_id = 1:num_targets
+    h_interceptor_target = plot(NaN, NaN, 'bo', 'MarkerSize', 7, ...
+        'MarkerFaceColor', interceptor_target_colors{target_id}, 'MarkerEdgeColor', interceptor_target_colors{target_id});
+    legend_handles = [legend_handles, h_interceptor_target];
+    legend_labels{end+1} = sprintf('Target %d Interceptor', target_id);
+end
+
+legend_handles = [legend_handles, h_primary_tracker, h_secondary_tracker, h_returning_home, h_detecting, h_normal];
+legend_labels = [legend_labels, {'Primary Tracker', 'Secondary Tracker', 'Returning Home', 'Detecting', 'Normal Sensor'}];
+lgd = legend(legend_handles, legend_labels, 'Location', 'northeastoutside');
+lgd.AutoUpdate = 'off';
 
 status_text = text(-12, -10, 'System: IDLE | No targets detected', 'BackgroundColor', 'white', 'EdgeColor', 'black', 'Margin', 3, 'FontSize', 12);
 
@@ -582,6 +639,11 @@ interceptor_process_delay = zeros(num_targets, 1);  % Processing delay counter p
 
 % Confidence tracking for analysis
 confidence_data = [];  % Will store [time, sensor_id, target_id, confidence]
+
+% Track cumulative target-time coverage using the active tracker lists
+target_tracked_time = zeros(num_targets, 1);
+target_available_time = zeros(num_targets, 1);
+final_simulation_time = 0;
 
 % NEW: Full sensor position history for MAT replay
 node_positions_history = zeros(round(simulation_time/dt), num_nodes, 2);
@@ -613,6 +675,7 @@ interceptor_employ_events = struct('time', {}, 'sensor_id', {}, ...
 %% Main simulation loop
 for t = 1:simulation_time/dt
     current_time = t * dt;
+    final_simulation_time = current_time;
     node_positions_history(t, :, :) = node_positions;
 
     %% Move multiple targets with different speeds
@@ -951,7 +1014,7 @@ for t = 1:simulation_time/dt
                         all_calling_targets, interceptor_assigned_target, num_nodes, num_targets, ...
                         active_trackers, node_positions, original_positions, interceptor_process_data, ...
                         sensor_ekf_states, sensor_detection_times, current_time, communication_range, ...
-                        wsn_width, wsn_height, MAX_ACTIVE_TRACKERS, USE_MCMF_ASSIGNMENT);
+                        wsn_width, wsn_height, MAX_ACTIVE_TRACKERS, USE_GLOBAL_ASSIGNMENT);
 
                     for reselect_idx = 1:numel(reselection_events)
                         fprintf(fid, ['[t=%5.2f][RESELECT] Target %d added to joint selection because ' ...
@@ -1062,7 +1125,7 @@ for t = 1:simulation_time/dt
                         MAX_ACTIVE_TRACKERS);
                     legacy_solver_runtime = toc(legacy_solver_timer);
 
-                    if USE_MCMF_ASSIGNMENT
+                    if USE_GLOBAL_ASSIGNMENT
                         selected_assignments = mcmf_assignments;
                         assignment_info = mcmf_info;
                         selected_solver_runtime = mcmf_solver_runtime;
@@ -1152,7 +1215,7 @@ for t = 1:simulation_time/dt
                             current_time, all_calling_targets(log_idx), num2str(legacy_team_for_log), ...
                             strtrim(legacy_cost_text), legacy_info.assignment_costs_per_target(log_idx));
 
-                        if USE_MCMF_ASSIGNMENT
+                        if USE_GLOBAL_ASSIGNMENT
                             selected_costs_by_target{log_idx} = mcmf_costs_for_log;
                             selected_cost_text = mcmf_cost_text;
                         else
@@ -1993,7 +2056,6 @@ for t = 1:simulation_time/dt
                     P_matrices{target_id}(1:2, 1:2) = P_matrices{target_id}(1:2, 1:2) + Q_anisotropic;
                     
                     projected_center = ekf_states{target_id}(1:2);
-                    plot(projected_center(1), projected_center(2), 'mx', 'MarkerSize', 8);
                     
                     % Generate updated contours
                     contour_points = generate3SigmaContour(ekf_states{target_id}(1:2), P_matrices{target_id}(1:2,1:2), 0.9889, 100);
@@ -2293,6 +2355,17 @@ for t = 1:simulation_time/dt
             interceptor_assigned_target(sensor_id) = 0;
         end
     end
+
+    for target_id = 1:num_targets
+        target_is_active = current_time > target_start_time(target_id) && ...
+            target_positions(target_id, 1) <= wsn_width + 30;
+        if target_is_active
+            target_available_time(target_id) = target_available_time(target_id) + dt;
+            if ~isempty(active_trackers{target_id})
+                target_tracked_time(target_id) = target_tracked_time(target_id) + dt;
+            end
+        end
+    end
     
     %% Update display (modified for three targets)
     if mod(t, update_frequency) == 0 || t == 1
@@ -2396,9 +2469,15 @@ for t = 1:simulation_time/dt
                     end
                     
                 case SENSOR_STATES.INTERCEPTING
-                    % Interceptor candidate - ORANGE
-                    set(node_handles(i), 'MarkerFaceColor', [1, 0.5, 0], 'MarkerEdgeColor', [1, 0.5, 0], 'MarkerSize', 7);
-                    set(circle_handles(i), 'FaceColor', [1, 0.5, 0], 'FaceAlpha', 0.15, 'EdgeColor', [1, 0.5, 0]);
+                    % Color interceptors by their currently assigned target.
+                    assigned_target = interceptor_assigned_target(i);
+                    if assigned_target >= 1 && assigned_target <= numel(interceptor_target_colors)
+                        interceptor_color = interceptor_target_colors{assigned_target};
+                    else
+                        interceptor_color = [1, 0.5, 0];
+                    end
+                    set(node_handles(i), 'MarkerFaceColor', interceptor_color, 'MarkerEdgeColor', interceptor_color, 'MarkerSize', 7);
+                    set(circle_handles(i), 'FaceColor', interceptor_color, 'FaceAlpha', 0.15, 'EdgeColor', interceptor_color);
                     
                 case SENSOR_STATES.RETURNING_HOME
                     % Returning home - MAGENTA
@@ -2475,7 +2554,7 @@ for t = 1:simulation_time/dt
         set(status_text, 'String', status);
         
         % Update title
-        title(sprintf('WSN FSM three Target Tracking - Time: %.1f s, System State: %s', current_time, system_state));
+        title(sprintf('WSN FSM three target tracking - Time: %.1f s, System State: %s', current_time, system_state));
         
         drawnow;
     end
@@ -2572,6 +2651,46 @@ for t = 1:simulation_time/dt
     end
 
 end  % END OF MAIN SIMULATION LOOP
+
+target_tracking_coverage_pct = zeros(num_targets, 1);
+for target_id = 1:num_targets
+    if target_available_time(target_id) > 0
+        target_tracking_coverage_pct(target_id) = ...
+            100 * target_tracked_time(target_id) / target_available_time(target_id);
+    end
+end
+
+total_tracked_target_time = sum(target_tracked_time);
+total_available_target_time = sum(target_available_time);
+overall_tracking_coverage_pct = 0;
+if total_available_target_time > 0
+    overall_tracking_coverage_pct = ...
+        100 * total_tracked_target_time / total_available_target_time;
+end
+
+tracking_time_stats = struct( ...
+    'use_global_assignment', USE_GLOBAL_ASSIGNMENT, ...
+    'assignment_mode_label', assignment_mode_label, ...
+    'dt', dt, ...
+    'final_simulation_time', final_simulation_time, ...
+    'target_tracked_time', target_tracked_time, ...
+    'target_available_time', target_available_time, ...
+    'target_tracking_coverage_pct', target_tracking_coverage_pct, ...
+    'total_tracked_target_time', total_tracked_target_time, ...
+    'total_available_target_time', total_available_target_time, ...
+    'overall_tracking_coverage_pct', overall_tracking_coverage_pct);
+
+fprintf(fid, '[t=%5.2f][RESULT] === TARGET TRACKING TIME SUMMARY ===\n', final_simulation_time);
+fprintf(fid, '[t=%5.2f][RESULT] Assignment mode: USE_GLOBAL_ASSIGNMENT=%d (%s)\n', ...
+    final_simulation_time, USE_GLOBAL_ASSIGNMENT, assignment_mode_label);
+for target_id = 1:num_targets
+    fprintf(fid, '[t=%5.2f][RESULT] Target %d tracked time: %.2f / %.2f s (%.1f%%)\n', ...
+        final_simulation_time, target_id, target_tracked_time(target_id), ...
+        target_available_time(target_id), target_tracking_coverage_pct(target_id));
+end
+fprintf(fid, '[t=%5.2f][RESULT] Total tracked target time: %.2f / %.2f target-s (%.1f%%)\n', ...
+    final_simulation_time, total_tracked_target_time, total_available_target_time, ...
+    overall_tracking_coverage_pct);
 
 %% Plot Confidence Analysis
 if ~isempty(confidence_data)
@@ -3042,34 +3161,7 @@ function plotSingleSensorTrajectory(sensor_id, sensor_trajectories, original_pos
     legend(legend_handles, legend_labels, 'Location', 'eastoutside', 'FontSize', 10);
 end
 
-%% Updated Legend for three Target Simulation
-figure(fig);
-
-% Create dummy plot handles for legend - dynamic for multiple targets
-legend_handles = [];
-legend_labels = {};
-
-% Add target handles dynamically
-for target_id = 1:num_targets
-    h_target = plot(NaN, NaN, [target_colors{target_id} '*'], 'MarkerSize', 10);
-    h_target_path = plot(NaN, NaN, [target_colors{target_id} '-'], 'LineWidth', 1);
-    legend_handles = [legend_handles, h_target, h_target_path];
-    legend_labels{end+1} = sprintf('Target %d', target_id);
-    legend_labels{end+1} = sprintf('Target %d Path', target_id);
-end
-
-% Add sensor state handles
-h_primary_tracker = plot(NaN, NaN, 'bo', 'MarkerSize', 9, 'MarkerFaceColor', 'r');
-h_secondary_tracker = plot(NaN, NaN, 'bo', 'MarkerSize', 8, 'MarkerFaceColor', [0.8, 0, 0]);
-h_interceptor = plot(NaN, NaN, 'bo', 'MarkerSize', 7, 'MarkerFaceColor', [1, 0.5, 0]);
-h_returning_home = plot(NaN, NaN, 'bo', 'MarkerSize', 6, 'MarkerFaceColor', 'm');
-h_detecting = plot(NaN, NaN, 'bo', 'MarkerSize', 7, 'MarkerFaceColor', 'c');
-h_normal = plot(NaN, NaN, 'bo', 'MarkerSize', 6, 'MarkerFaceColor', [0, 0, 0.8]);
-
-legend_handles = [legend_handles, h_primary_tracker, h_secondary_tracker, h_interceptor, h_returning_home, h_detecting, h_normal];
-legend_labels = [legend_labels, {'Primary Tracker', 'Secondary Tracker', 'Interceptor', 'Returning Home', 'Detecting', 'Normal Sensor'}];
-
-legend(legend_handles, legend_labels, 'Location', 'northeastoutside');
+% Legend is initialized before the simulation loop so it stays visible during playback.
 
 % fprintf('\n=== three TARGET SIMULATION COMPLETE ===\n');
 % fprintf('Enhanced FSM-based three target cooperative tracking simulation finished.\n');
@@ -3087,6 +3179,7 @@ fclose(fid);
 
 save(mat_filename, ...
     'params', ...
+    'tracking_time_stats', ...
     'node_positions_history', ...
     'interceptor_events', ...
     'assignment_events', ...

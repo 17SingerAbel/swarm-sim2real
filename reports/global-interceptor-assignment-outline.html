@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Report Outline - Global Interceptor Assignment</title>
+  <style>
+    :root {
+      --bg: #f7f4ee;
+      --paper: #fffdf8;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --accent: #8a5a44;
+      --line: #ded6c8;
+    }
+
+    body {
+      margin: 0;
+      padding: 40px 20px;
+      background: linear-gradient(180deg, #f3efe6 0%, #f9f7f2 100%);
+      color: var(--ink);
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.65;
+    }
+
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+      padding: 42px 48px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin-top: 0;
+      color: #2b2118;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.4em;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2em;
+      padding-bottom: 0.25em;
+      border-bottom: 2px solid var(--line);
+    }
+
+    h3 {
+      font-size: 1.05rem;
+      margin-top: 1.2em;
+      color: var(--accent);
+    }
+
+    p.lead {
+      color: var(--muted);
+      font-size: 1.02rem;
+      margin-bottom: 1.8em;
+    }
+
+    .thesis {
+      background: #f6efe5;
+      border-left: 4px solid var(--accent);
+      padding: 14px 16px;
+      margin: 24px 0 32px;
+    }
+
+    ul {
+      margin: 0.5em 0 1em 1.2em;
+    }
+
+    li {
+      margin: 0.35em 0;
+    }
+
+    .note {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .section {
+      margin-bottom: 2rem;
+    }
+
+    .keywords {
+      margin-top: 0.6em;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    code {
+      background: #f1ece3;
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      font-size: 0.95em;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>Outline for the Final Report</h1>
+      <p class="lead">
+        Proposed structure for presenting the revised interceptor assignment method
+        without making it sound like a restatement of the original DES/FSM framework.
+      </p>
+
+      <div class="thesis">
+        <strong>Core framing sentence:</strong>
+        The original DES/FSM handover pipeline is retained, but the conflict-resolution
+        formulation is revised in affected-target scope, lexicographic objective, and
+        global assignment structure.
+      </div>
+    </header>
+
+    <section class="section">
+      <h2>1. Abstract</h2>
+      <ul>
+        <li>Briefly introduce cooperative multi-target tracking in a mobile WSN.</li>
+        <li>State the limitation of the previous MinMax-based conflict resolution.</li>
+        <li>Explicitly state the three differences of the revised method: expanded affected-target scope, maximize-then-minimize objective, and global assignment structure.</li>
+        <li>Conclude with the main implication: improved conflict handling while preserving distributed DES execution under ideal communication assumptions.</li>
+      </ul>
+      <p class="keywords">
+        Keywords: <code>affected-target scope</code>, <code>lexicographic objective</code>, <code>global assignment</code>, <code>distributed DES</code>
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>2. Introduction</h2>
+      <ul>
+        <li>Introduce why interceptor assignment conflict matters in proactive handover.</li>
+        <li>Explain what the previous paper already achieved: DES/FSM coordination, local bidding, proactive handover.</li>
+        <li>Identify the specific limitation: MinMax only protects fairness within one conflict-resolution step, and later overlapping requests do not automatically pull the previously served target back into the same reassignment scope.</li>
+        <li>End with a short contribution list built around the three explicit differences.</li>
+      </ul>
+      <p class="note">
+        This section should define the novelty early, rather than spending too much space on general WSN background.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>3. Background / Previous Framework</h2>
+      <ul>
+        <li>Summarize the original DES/FSM architecture only to the extent needed for the new method.</li>
+        <li>Describe the original broadcast-bid-select pipeline.</li>
+        <li>Clarify that bid computation remains local and distributed.</li>
+        <li>Present the previous MinMax conflict-resolution logic as the baseline for comparison.</li>
+      </ul>
+      <p class="note">
+        The purpose of this section is to establish what remains unchanged and what serves as the baseline.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>4. Problem Formulation</h2>
+      <ul>
+        <li>Define targets, candidate sensors, interceptor slots, and assignment costs.</li>
+        <li>Formally define <code>affected targets</code> as the current requesting target plus any original target impacted by committed-sensor overlap.</li>
+        <li>Distinguish between synchronous conflict and asynchronous later-request conflict.</li>
+        <li>Explain why a purely local or pairwise team comparison is insufficient once affected targets must be handled in one shared reassignment scope.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>5. Revised Method</h2>
+
+      <h3>5.1 What Is Retained from the Original DES Workflow</h3>
+      <ul>
+        <li>Broadcast, bidding, and selection stages remain.</li>
+        <li>Each sensor still computes its own bid locally.</li>
+        <li>Sensor-level execution remains FSM-based and distributed.</li>
+      </ul>
+
+      <h3>5.2 Revised Affected-Target Scope</h3>
+      <ul>
+        <li>If a later request contests a sensor already committed to another target, include that original target in the same affected-target set.</li>
+        <li>Handle committed-sensor overlap by expanding the reassignment scope before solving the assignment, rather than by a separate post-selection repair step.</li>
+      </ul>
+
+      <h3>5.3 Revised Objective</h3>
+      <ul>
+        <li>First maximize the number of assigned interceptor slots across all affected targets.</li>
+        <li>Then minimize the total assignment cost among those maximally feasible solutions.</li>
+        <li>The replacement opportunity for a previously served target emerges from this shared objective once that target is included in the affected-target set.</li>
+      </ul>
+
+      <h3>5.4 Revised Assignment Structure</h3>
+      <ul>
+        <li>Replace non-overlapping two-sensor team comparison with a global sensor-to-target-slot assignment.</li>
+        <li>Construct the assignment over all affected targets and all eligible candidate sensors in the current reassignment event.</li>
+      </ul>
+
+      <p class="note">
+        This is the core section of the report and should make the three differences explicit: expanded affected-target scope, revised objective, and revised assignment structure.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>6. Distributed Realization and Communication Assumptions</h2>
+      <ul>
+        <li>Clarify that <code>global</code> refers to the decision scope, not centralized control of the whole WSN.</li>
+        <li>Explain how sensors reconstruct the same assignment instance under ideal communication.</li>
+        <li>State that bids are still generated locally and disseminated through the network.</li>
+        <li>Discuss the practical limitation that communication delay and incomplete message propagation can affect feasibility.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>7. Simulation Setup and Comparative Scenario</h2>
+      <ul>
+        <li>Use the same DES framework, EKF model, bidding cost function, and network parameters as the previous version.</li>
+        <li>State clearly that the interceptor assignment strategy is the only intended methodological difference.</li>
+        <li>Introduce the natural conflict scenario, especially the case where a later request expands the affected-target set by overlapping with a previously committed interceptor.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>8. Results and Discussion</h2>
+      <ul>
+        <li>Compare the assignment outcomes under the same conflict scenario.</li>
+        <li>Explain differences in terms of affected-target scope, objective, and assignment structure, not just numerical cost reduction.</li>
+        <li>Show whether the revised method improves fulfilled interceptor count, total cost, or reassignment robustness once previously served targets are jointly reconsidered.</li>
+        <li>Discuss the trade-off between fairness-oriented MinMax behavior and efficiency-oriented global assignment behavior.</li>
+      </ul>
+      <p class="note">
+        The discussion should emphasize formulation-level differences, not merely algorithm naming differences.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>9. Conclusion</h2>
+      <ul>
+        <li>Restate the three explicit differences from the previous paper: affected-target scope, assignment objective, and assignment structure.</li>
+        <li>Summarize the main benefit of the revised method in conflict handling.</li>
+        <li>Reaffirm that the distributed DES architecture is preserved conceptually.</li>
+        <li>Close with future work on communication-aware and hardware-aware validation.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
