@@ -1,5 +1,5 @@
-function [expanded_calling_targets, reselection_events] = expandCallingTargetsForJointReselection(initial_calling_targets, interceptor_assigned_target, num_nodes, num_targets, active_trackers, node_positions, original_positions, interceptor_process_data, sensor_ekf_states, sensor_detection_times, current_time, communication_range, wsn_width, wsn_height, slots_per_target, use_mcmf)
-%EXPANDCALLINGTARGETSFORJOINTRESELECTION Add targets whose interceptors are stolen.
+function [expanded_calling_targets, reselection_events] = expandCallingTargetsForAssignment(initial_calling_targets, interceptor_assigned_target, num_nodes, num_targets, active_trackers, node_positions, original_positions, interceptor_process_data, sensor_ekf_states, sensor_detection_times, current_time, communication_range, wsn_width, wsn_height, slots_per_target, use_mcmf)
+%EXPANDCALLINGTARGETSFORASSIGNMENT Add targets whose interceptors are stolen.
 %   Runs provisional assignments for the current target set. If a selected
 %   sensor is already intercepting for a target outside that set, include the
 %   previous owner target and repeat until the joint set is closed.

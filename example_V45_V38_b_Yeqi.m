@@ -158,33 +158,51 @@ noise = 0.01;
 
 waypoints_list = cell(num_targets, 1);
 
-num_targets = 3;  % Or make this configurable
-waypoints_list = cell(num_targets, 1);
+% num_targets = 3;  % Or make this configurable
+% waypoints_list = cell(num_targets, 1);
+% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
+% waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
+% waypoints_list{3} = [0,9.692; 10,9.692; 25,13.692; 36,19.692; 48,32.692; 55,42.692; 70,54.692]; % third target path
+
+% % Different speeds per target
+% target_velocities = [1.0, 1.1, 1.2];  % Target 1: normal, Target 2: slower, Target 3: faster
+% % target_velocities = [1.0, 1.3, 1.5];
+
+% % Different entry times
+% target_start_time = [0, 4.0, 6.5];  % Staggered entry times
+
+% % Target state arrays
+% target_positions = zeros(num_targets, 2);
+% target_trajectories = cell(num_targets, 1);
+% current_waypoint_idx = ones(num_targets, 1);
+% noise = 0.01;
+
+% % Initialize with time lag - Target 2 starts later
+% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
+% target_positions(2, :) = waypoints_list{2}(1, :);  % Target 2 starts immediately
+% target_positions(3, :) = waypoints_list{3}(1, :);  % Target 3 starts immediately
+% target_positions(3, :) = [-15, 0];  % Target 3 starts off-screen, will enter later
+% target_trajectories{1} = target_positions(1, :);
+% target_trajectories{2} = target_positions(2, :);
+% target_trajectories{3} = target_positions(3, :);
+
+% Example 2
+% Same-direction trajectories with time lag
+num_targets = 2; 
 waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
 waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
-waypoints_list{3} = [0,9.692; 10,9.692; 25,13.692; 36,19.692; 48,32.692; 55,42.692; 70,54.692]; % third target path
 
-% Different speeds per target
-target_velocities = [1.0, 1.1, 1.2];  % Target 1: normal, Target 2: slower, Target 3: faster
-% target_velocities = [1.0, 1.3, 1.5];
-
-% Different entry times
-target_start_time = [0, 4.0, 6.5];  % Staggered entry times
-
-% Target state arrays
-target_positions = zeros(num_targets, 2);
-target_trajectories = cell(num_targets, 1);
-current_waypoint_idx = ones(num_targets, 1);
-noise = 0.01;
+target_velocities = [1.0, 1.0]; 
+% Add time lag control
+target_start_time = [0, 0.0];  % Target 2 starts 2 seconds later
 
 % Initialize with time lag - Target 2 starts later
 target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-target_positions(2, :) = waypoints_list{2}(1, :);  % Target 2 starts immediately
-target_positions(3, :) = waypoints_list{3}(1, :);  % Target 3 starts immediately
-target_positions(3, :) = [-15, 0];  % Target 3 starts off-screen, will enter later
+target_positions(2, :) = waypoints_list{2}(1, :);   % Target 2 starts off-screen, will enter later
 target_trajectories{1} = target_positions(1, :);
 target_trajectories{2} = target_positions(2, :);
-target_trajectories{3} = target_positions(3, :);
+
+
 
 
 % % Same-direction trajectories with time lag

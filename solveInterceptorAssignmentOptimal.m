@@ -1,5 +1,5 @@
-function [assignments, diagnostics] = solveInterceptorAssignmentMCMF(calling_targets, candidates, cost_matrix, slots_per_target)
-%SOLVEINTERCEPTORASSIGNMENTMCMF Solve interceptor assignment with min-cost max-flow.
+function [assignments, diagnostics] = solveInterceptorAssignmentOptimal(calling_targets, candidates, cost_matrix, slots_per_target)
+%SOLVEINTERCEPTORASSIGNMENTOPTIMAL Solve interceptor assignment with min-cost max-flow.
 %   The solver expands each target into slots_per_target slots, assigns each
 %   candidate sensor to at most one slot, and uses a large assignment reward
 %   so the optimization first maximizes assigned slots and then minimizes cost.
@@ -13,12 +13,12 @@ candidates = candidates(:);
 [num_candidates, num_targets] = size(cost_matrix);
 
 if num_candidates ~= numel(candidates)
-    error('solveInterceptorAssignmentMCMF:CandidateSizeMismatch', ...
+    error('solveInterceptorAssignmentOptimal:CandidateSizeMismatch', ...
         'Rows of cost_matrix must match number of candidates.');
 end
 
 if num_targets ~= numel(calling_targets)
-    error('solveInterceptorAssignmentMCMF:TargetSizeMismatch', ...
+    error('solveInterceptorAssignmentOptimal:TargetSizeMismatch', ...
         'Columns of cost_matrix must match number of calling targets.');
 end
 
@@ -87,7 +87,7 @@ for sensor_idx = 1:num_candidates
         slot_node = slot_offset + slot_idx;
         if flow_matrix(sensor_node, slot_node) > 0
             target_idx = slot_target_indices(slot_idx);
-            assignments{target_idx}(end + 1, 1) = candidates(sensor_idx); %#ok<AGROW>
+            assignments{target_idx}(end + 1, 1) = candidates(sensor_idx);
             assigned_slots_per_target(target_idx) = assigned_slots_per_target(target_idx) + 1;
             assignment_costs_per_target(target_idx) = assignment_costs_per_target(target_idx) + cost_matrix(sensor_idx, target_idx);
         end

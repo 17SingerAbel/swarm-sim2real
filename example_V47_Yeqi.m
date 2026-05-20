@@ -123,7 +123,7 @@ communication_range = node_spacing * 1.5;  % units- we are actually broadcasting
 EKF_VELOCITY_CONVERGENCE_THRESHOLD = 0.006;  % Velocity variance threshold (units²/s²)
 PREDICTION_STABILITY_THRESHOLD = 0.5;        % Time difference threshold (TUs)
 MIN_STABLE_PREDICTIONS = 2;                  % Need at least 2 consecutive stable predictions
-USE_GLOBAL_ASSIGNMENT = true;                  % V46 switch for A/B testing against legacy assignment
+USE_GLOBAL_ASSIGNMENT = false;                  % V46 switch for A/B testing against legacy assignment
 
 assignment_mode_labels = {'LEGACY_ASSIGNMENT', 'GLOBAL_ASSIGNMENT'};
 assignment_mode_label = assignment_mode_labels{1 + double(USE_GLOBAL_ASSIGNMENT)};
@@ -187,74 +187,6 @@ current_waypoint_idx = ones(num_targets, 1);
 noise = 0.01;
 
 
-
-
-% % EXAMPLE 1
-% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
-% waypoints_list{2} = [0,41.56; 10,41.56; 25,37.56; 36,31.56; 48,18.56; 55,8.56; 70,-3.4]; % upper left to bottom right
-
-% % Different speeds per target
-% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
-% % Different entry times
-% target_start_time = [0.0, 0.0];  % Staggered entry times
-
-% % Initialize with time lag - Target 2 starts later
-% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-% target_positions(2, :) = waypoints_list{2}(1, :);
-% target_trajectories{1} = target_positions(1, :);
-% target_trajectories{2} = target_positions(2, :);
-
-% % Example 2
-% % Same-direction trajectories with time lag
-% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920];  % lower left to upper right
-% waypoints_list{2} = [0,4.692; 10,4.692; 25,10; 36,14.692; 48,27.692; 55,37.692; 70,49.692]; % parallel path above target 1
-
-% target_velocities = [1.0, 1.0]; 
-% % Add time lag control
-% target_start_time = [0.0, 0.0];  % Target 2 starts 2 seconds later
-
-% % Initialize with time lag - Target 2 starts later
-% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-% target_positions(2, :) = [0, 0.2];  % Target 2 starts off-screen, will enter later
-% target_trajectories{1} = target_positions(1, :);
-% target_trajectories{2} = target_positions(2, :);
-
-
-% % EXAMPLE 3
-% waypoints_list{1} = [0,-0.308; 10,-0.308; 25,3.6920; 36,9.6920; 48,22.6920; 55,32.6920; 70,44.6920]; % lower left to upper right
-% waypoints_list{2} = waypoints_list{1}; % Start with the same path
-% waypoints_list{2}(:,2) = waypoints_list{2}(:,2) + 1.5;
-% % Different speeds per target
-% target_velocities = [1.0, 1.0];  % Target 1: normal, Target 2: slightly faster
-% % Different entry times
-% target_start_time = [0.0, 0.0];  % Staggered entry times
-
-% % Initialize with time lag - Target 2 starts later
-% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-% target_positions(2, :) = waypoints_list{2}(1, :);
-% target_trajectories{1} = target_positions(1, :);
-% target_trajectories{2} = target_positions(2, :);
-
-
-
-% % Different speeds per target
-% target_velocities = [1.0, 1.1, 1.2];  % Target 1: normal, Target 2: slower, Target 3: faster
-% % target_velocities = [1.0, 1.3, 1.5];
-
-% % Different entry times
-% target_start_time = [0, 4.0, 6.5];  % Staggered entry times
-
-% % Target state arrays
-% target_positions = zeros(num_targets, 2);
-% target_trajectories = cell(num_targets, 1);
-% current_waypoint_idx = ones(num_targets, 1);
-% noise = 0.01;
-
-% % Initialize with time lag - Target 2 starts later
-% target_positions(1, :) = waypoints_list{1}(1, :);  % Target 1 starts immediately
-% target_positions(2, :) = [-15, 0];  % Target 2 starts off-screen, will enter later
-% target_trajectories{1} = target_positions(1, :);
-% target_trajectories{2} = target_positions(2, :);
 
 % NEW: Prediction stability tracking per target
 previous_loss_predictions = zeros(num_nodes, num_targets);     % Track previous prediction for each sensor-target pair
@@ -1010,7 +942,7 @@ for t = 1:simulation_time/dt
                        current_time, target_id, num2str(other_targets_calling'));
                     all_calling_targets = [target_id; other_targets_calling];
 
-                    [all_calling_targets, reselection_events] = expandCallingTargetsForJointReselection( ...
+                    [all_calling_targets, reselection_events] = expandCallingTargetsForAssignment( ...
                         all_calling_targets, interceptor_assigned_target, num_nodes, num_targets, ...
                         active_trackers, node_positions, original_positions, interceptor_process_data, ...
                         sensor_ekf_states, sensor_detection_times, current_time, communication_range, ...
@@ -1114,13 +1046,13 @@ for t = 1:simulation_time/dt
                     end
 
                     mcmf_solver_timer = tic;
-                    [mcmf_assignments, mcmf_info] = solveInterceptorAssignmentMCMF( ...
+                    [mcmf_assignments, mcmf_info] = solveInterceptorAssignmentOptimal( ...
                         all_calling_targets, available_sensors, assignment_cost_matrix, ...
                         MAX_ACTIVE_TRACKERS);
                     mcmf_solver_runtime = toc(mcmf_solver_timer);
 
                     legacy_solver_timer = tic;
-                    [legacy_assignments, legacy_info] = solveInterceptorAssignmentLegacy( ...
+                    [legacy_assignments, legacy_info] = solveInterceptorAssignmenMinMax( ...
                         all_calling_targets, available_sensors, assignment_cost_matrix, ...
                         MAX_ACTIVE_TRACKERS);
                     legacy_solver_runtime = toc(legacy_solver_timer);

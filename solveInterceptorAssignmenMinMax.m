@@ -1,5 +1,5 @@
-function [assignments, diagnostics] = solveInterceptorAssignmentLegacy(calling_targets, candidates, cost_matrix, slots_per_target)
-%SOLVEINTERCEPTORASSIGNMENTLEGACY Preserve the pre-V46 team selection logic.
+function [assignments, diagnostics] = solveInterceptorAssignmenMinMax(calling_targets, candidates, cost_matrix, slots_per_target)
+%SOLVEINTERCEPTORASSIGNMENMINMAX Preserve the pre-V46 team selection logic.
 %   The legacy solver keeps the older greedy/minimax flavor available for
 %   comparison, while the new MCMF path can be switched on independently.
 
@@ -12,12 +12,12 @@ candidates = candidates(:);
 [num_candidates, num_targets] = size(cost_matrix);
 
 if num_candidates ~= numel(candidates)
-    error('solveInterceptorAssignmentLegacy:CandidateSizeMismatch', ...
+    error('solveInterceptorAssignmenMinMax:CandidateSizeMismatch', ...
         'Rows of cost_matrix must match number of candidates.');
 end
 
 if num_targets ~= numel(calling_targets)
-    error('solveInterceptorAssignmentLegacy:TargetSizeMismatch', ...
+    error('solveInterceptorAssignmenMinMax:TargetSizeMismatch', ...
         'Columns of cost_matrix must match number of calling targets.');
 end
 
