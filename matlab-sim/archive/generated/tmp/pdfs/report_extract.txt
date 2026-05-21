@@ -1,0 +1,470 @@
+--- PAGE 1 ---
+Expanded Joint Interceptor Assignment for Cooperative Multi-Target Tracking  
+Yeqi Sang 
+MIE8888 Final Report 
+ 
+Abstract 
+This report studies interceptor assignment conflicts in a mobile wireless sensor network (WSN) for cooperative 
+multi-target tracking. In Naeimeh’s previous work [1], interceptor conflicts were resolved through a MinMax 
+objective that attempts to minimize the worst team cost among the targets involved in the same conflict-resolution 
+step. This formulation provides a fairness-oriented baseline, but it does not directly optimize the total assignment 
+cost. In addition, when a later handover request takes over a sensor that has already been committed to another 
+target, the previously served target may lose that committed sensor, thereby reducing its probability of successful 
+interception. 
+In this report, the proposed method is referred to as an expanded joint assignment approach. Here, “expanded” 
+means that the joint assignment scope includes not only the current calling targets, but also any previously served 
+target whose committed interceptor is contested by a later handover request. The method differs from the previous 
+approach in three ways. First, it includes both the current calling targets and the previously served targets affected by 
+contested committed interceptors in the same joint assignment problem. Second, it uses a two-stage assignment 
+objective that first maximizes the number of filled interceptor slots and then minimizes the total assignment cost 
+among assignments with the same number of filled slots. Third, it replaces non -overlapping candidate team 
+comparison with an event-local sensor-to-target assignment over all involved targets and eligible candidate sensors. 
+Under ideal communication assumptions in simulation, the resulting formulation retains the distributed execution 
+logic of the original DES framework while providing a different mechanism for resolving interceptor assignment 
+conflicts. The communication requirements and implications for physical-platform implementation are discussed 
+later in the report. 
+ 
+1. Introduction 
+Mobile wireless sensor networks (WSNs) provide a flexible platform for cooperative multi -target tracking because 
+mobile sensors can reposition themselves in response to target motion and local tracking needs. In Naeimeh's 
+previous work [1], this capability was organized through a distributed Discrete Event System (DES) framework in 
+which sensors coordinate proactive handover through local bid computation, handover-request broadcasting, and 
+Finite State Machine (FSM)-based execution. During operation, an active tracker issues a handover request when 
+target loss is predicted, and available candidate sensors participate in an auction -like bidding process to determine 
+which sensors should serve as interceptors. The selected interceptors then move toward the pred icted interception 
+region to support tracking continuity before the current tracker loses the target. This distributed handover framework 
+provides the system baseline for the present report. 
+This report focuses on a narrow but important issue within that framework: interceptor assignment conflict 
+resolution. In the DES framework, interceptor assignment conflicts arise when multiple handover requests compete 
+for the same candidate sensors or when a later handover request attempts to use a sensor already committed to 
+another target. In the previous method, conflicts among handover requests within the same conflict -resolution step 
+were handled through a MinMax objective that attempts to minimize the worst team cost among the involved 
+targets. This formulation provides a fairness-oriented baseline and helps reduce the likelihood that any target 
+receives a poor interceptor configuration. However, because the MinMax objective optimizes the worst -case team 
+
+--- PAGE 2 ---
+cost rather than the total assignment cost, it does not necessarily produce the most efficient overall assignment. In 
+addition, although the previous work already provides a reasonable DES -based mechanism for resolving conflicts 
+that occur within an assignment interval, another limitation remains: a later handover request can reassign a sensor 
+that has already been committed to another target without simultaneously reconsidering the target that loses this 
+interceptor. When that happens, the previously served target loses one of its committed interceptors, which can 
+reduce its probability of successful interception. 
+The contribution of this report is a reformulation of the interceptor conflict -resolution mechanism together with a 
+corresponding assignment procedure. Compared with the previous MinMax -based method, the proposed expanded 
+joint assignment approach differs in three ways. First, it expands the joint assignment problem beyond the current 
+calling targets to include any previously served target whose committed interceptor is contested by a later handover 
+request. Second, it uses a two-stage assignment objective that first maximizes the number of assigned interceptor 
+slots across the involved targets and then minimizes the total assignment cost among assignments with eligible 
+candidate sensors. Third, it replaces the previous comparison of non-overlapping candidate teams with a constrained 
+sensor-to-target assignment model that jointly enforces the interceptor capacity of each target and the one-target-at-
+a-time constraint of each sensor. Under ideal communication assumptions in simulation, this revised formulation 
+retains the distributed execution logic of the original DES framework while provi ding a different mechanism for 
+resolving interceptor assignment conflicts. The communication requirements and implications for physical -platform 
+implementation are discussed later in the report. 
+ 
+2. Related Work 
+Multi-target tracking in wireless sensor networks (WSNs) has evolved from reactive detection -based strategies to 
+predictive and coordinated frameworks. Early approaches primarily relied on passive tracking, where sensors detect 
+targets within range and reacquire them after loss through opportunistic encounters. While simple, such methods 
+may suffer from frequent tracking interruptions when targets move quickly or when sensor coverage is sparse.  
+To address these limitations, predictive tracking frameworks have been developed to anticipate tracking loss and 
+enable proactive coordination. The DES-based coordination framework proposed in [1] integrates Extended Kalman 
+Filter (EKF)-based loss prediction, guidance-based sensor repositioning, and distributed bidding for sensor 
+allocation. In that framework, sensors operate using a finite-state-machine architecture and transition between 
+tracking and repositioning roles, enabling proactive handover before target loss occurs. This framework provides the 
+baseline system architecture for the present report. 
+Task allocation in multi-robot and sensor networks is commonly handled through auction-based or bidding-based 
+mechanisms because they allow agents to evaluate task suitability locally. These mechanisms are suitable for 
+distributed systems, but conflicts may arise when multiple targets require support from the same limited set of 
+candidate sensors. Therefore, the assignment objective plays an important role in determining how limited sensor 
+resources are allocated. A MinMax objective provides a fairness-oriented solution by reducing the worst target-level 
+team cost, while total-cost-based objectives prioritize lower combined assignment cost under the same feasibility 
+constraints. 
+In the DES framework of [1], interceptor conflict resolution is handled using a MinMax objective when multiple 
+targets compete for candidate sensors within the same assignment process. This provides a meaningful fairness -
+oriented baseline. However, the original formulation mainly addresses conflicts within the active assignment 
+procedure and does not explicitly include the later DES condition in which a new handover request contests a sensor 
+that has already been committed as an interceptor for another target. In this case, the previously served target may be 
+affected even though it is not part of the current calling-target set. 
+This report builds upon [1] by extending the assignment scope to include targets affected by committed -interceptor 
+conflicts. When a committed interceptor is contested by a later handover request, the target that may lose that 
+
+--- PAGE 3 ---
+interceptor is added to the expanded joint assignment problem before the assignment is solved. The report then 
+applies an event-local two-stage assignment objective over the involved targets and eligible candidate sensors. 
+Unlike the MinMax objective, which emphasizes worst-team-cost fairness, the proposed two-stage objective first 
+maximizes the number of filled interceptor slots and then minimizes the total assignment cost among feasible 
+assignments with the same number of filled slots. 
+ 
+3. System Model and Problem Formulation 
+3.1 System Model and Assumptions 
+This section models the interceptor assignment problem. Consider a WSN with N mobile sensors that cooperatively 
+track up to K targets. Each target can be assigned up to two active tracking sensors, and up to 𝑚 interceptor sensors 
+when a potential target loss is predicted. 
+Each sensor,𝑖 ∈ 𝒩 = {1, … , 𝑁}, has a home position, ℎ𝑖ϵ𝑅2 and a current position 𝑠𝑖(𝑡)ϵ𝑅2. Each target, k ∈ K=
+{1, … , 𝐾},  , has state 𝑥𝑘(𝑡) = [𝑝𝑘(𝑡), 𝑣𝑘(𝑡)], where 𝑝𝑘(𝑡) is the target position and 𝑣𝑘(𝑡) is the target velocity. 
+Sensors have identical capabilities: detection radius 𝑟𝑑, maximum velocity 𝑣𝑠 and communication range 𝑟𝑐. Target 
+detection occurs when ‖𝑠𝑖(𝑡) − 𝑝𝑘(𝑡)‖ ≤ 𝑟𝑑. Upon detection, sensor 𝑖 obtains a noisy position measurement of 
+target 𝑘, 𝑧𝑖𝑘(𝑡) = 𝑝𝑘(𝑡) + 𝑛(𝑡) where 𝑛(𝑡) is zero-mean measurement noise with covariance 𝑅. 
+In the underlying DES framework, proactive handover is triggered when an active tracker predicts that its target may 
+soon be lost. The tracker then broadcasts a handover request to available candidate sensors. The candidate sensors 
+participate in a bidding process, in which each candidate computes a bid metric representing its suitability for the 
+handover task. The selected candidates are assigned as interceptors and are dispatched toward the predicted 
+interception region to support tracking continuity before target loss occurs. Sensors assigned to execute such a 
+handover request are referred to as interceptors in the remainder of this report.  
+Throughout the report, calling targets are targets that initiate a handover request and enter the interceptor assignment 
+process. Candidate sensors are eligible sensors that may bid for those targets, while active trackers are the sensors 
+currently responsible for direct target tracking and are excluded from interceptor bidding during the event. An 
+assignment event consists of the broadcast, bidding, and selection stages initiated by one or more handover requests.  
+The system assumptions used in the remainder of the report are as follows: the workspace is planar, sensors are 
+homogeneous, assignments are event-triggered, and each sensor can serve at most one target at a time within the 
+current assignment event. Because different targets may enter the assignment process at different times, a later 
+handover request may compete with sensors that have already been committed to another target. The proposed 
+method addresses this case by expanding the joint assignment scope before solving the assignment problem. 
+ 
+3.2 Problem Formulation and Bidding Cost Function 
+When one or more targets issue handover requests, the system defines the set of targets included in the expanded 
+joint assignment and the set of candidate sensors. The target set includes the current calling targets and any 
+previously served targets whose committed interceptors may be reassigned due to the current conflict -resolution 
+event. 
+For each calling target, one of its active trackers first predicts an interception point based on the current EKF target 
+estimate and the predicted tracker-loss point. This information is then broadcast to the network. Each eligible 
+candidate sensor evaluates a bidding cost for that target. A lower bid indicates that the sensor is a more suitable 
+interceptor candidate. 
+
+--- PAGE 4 ---
+Following the formulation in [1], the bidding cost is defined as: 
+𝑐(𝑖, 𝑘) = 𝑤1 𝑃_ℎ𝑜𝑚𝑒(𝑖) + 𝑤2 𝑃_𝑠𝑝𝑎𝑡𝑖𝑎𝑙(𝑖, 𝑘) + 𝑤3 𝑃_𝑡𝑒𝑚𝑝𝑜𝑟𝑎𝑙(𝑖, 𝑘)  + 𝑤4 𝑃_𝑢𝑛𝑐𝑒𝑟𝑡𝑎𝑖𝑛𝑡𝑦(𝑖, 𝑘) 
+•  𝑃_ℎ𝑜𝑚𝑒(𝑖) penalizes the displacement of a sensor from its home location.  
+• 𝑃_𝑠𝑝𝑎𝑡𝑖𝑎𝑙(𝑖, 𝑘) penalizes the distance from the sensor to the target intercept point. 
+• 𝑃_𝑡𝑒𝑚𝑝𝑜𝑟𝑎𝑙(𝑖, 𝑘) penalizes poor arrival timing relative to the target motion. 
+• 𝑃_𝑢𝑛𝑐𝑒𝑟𝑡𝑎𝑖𝑛𝑡𝑦(𝑖, 𝑘) penalizes low shared confidence in the target estimate. 
+Let 𝑥(𝑖, 𝑘) indicate whether sensor 𝑖 is assigned to target k, then we can have: 
+𝑥(𝑖, 𝑘) =  {1,            𝑖𝑓 𝑠𝑒𝑛𝑠𝑜𝑟 𝑖𝑠 𝑎𝑠𝑠𝑖𝑔𝑛𝑒𝑑 𝑡𝑜 𝑡𝑎𝑟𝑔𝑒𝑡 𝑘
+0,                                                         𝑜𝑡ℎ𝑒𝑟𝑤𝑖𝑠𝑒 
+Let 𝒩𝑐 denote the set of candidate sensors and 𝒦𝑎 denote the set of involved targets in the expanded joint 
+assignment problem. First, it maximizes the total number of interceptor slots filled across the targets in the 
+assignment scope:      
+𝑚𝑎𝑥 ∑ ∑ 𝑥(𝑖, 𝑘)
+𝑖∈𝒩𝑐𝑘∈𝒦𝑎
+ 
+Then, among all assignments that achieve this maximum value, it minimizes the total assignment cost:  
+𝑚𝑖𝑛 ∑ ∑ 𝑐(𝑖, 𝑘)𝑥(𝑖, 𝑘)
+𝑖∈𝒩𝑐𝑘∈𝒦𝑎
+ 
+The assignment is subject to the following constraints: 
+∑ 𝑥(𝑖, 𝑘)
+𝑘∈𝒦𝑎
+≤ 1, ∀ 𝑖 ∈ 𝒩𝑐 
+∑ 𝑥(𝑖, 𝑘)
+𝑖∈𝒩𝑐
+≤ 𝑚, ∀ 𝑘 ∈ 𝒦𝑎 
+𝑥(𝑖, 𝑘) ∈ {0, 1}, ∀ 𝑖 ∈ 𝒩𝑐, ∀ 𝑘 ∈ 𝒦𝑎 
+The first constraint ensures that each candidate sensor can be assigned to at most one target in the current 
+assignment event. The second constraint ensures that each involved target receives no more than its allowed number 
+of interceptors, where 𝑚 is the maximum number of interceptors per target.  
+ 
+4. Methodology 
+ 
+4.1 Conflict Detection and Expanded Joint Assignment Scope 
+The interceptor assignment workflow is activated when an active tracker predicts that a target may soon be lost and 
+initiates a handover request. Within the DES process, a conflict is detected when multiple handover requests 
+compete for one or more of the same candidate sensors. This can occur either because their assignment intervals 
+overlap or because a later handover request attempts to use a sensor that has already been committed to another 
+target. 
+
+--- PAGE 5 ---
+In [1], conflicts are identified at the event level by checking whether the same candidate sensor appears in more than 
+one active request set. This report extends the conflict condition to include the case where a new handover request 
+attempts to employ a sensor that has already broadcast the commitment message to another target. This extension 
+ensures that the previously served target is also included in the expanded joint assignment problem when one of its 
+committed interceptors is contested by a later handover request, since losing an interceptor may increase its risk of 
+target loss.  
+ 
+Figure 1: Joint interceptor assignment workflow in the DES framework.  
+To address this issue, the proposed method expands the joint assignment scope when necessary. The joint 
+assignment scope initially consists of the current calling targets in the assignment event. If the conflict involves only 
+these current handover requests, no further scope expansion is needed. The scope is expanded only when a 
+committed-interceptor overlap is detected. In that case, the target that may lose its committed interceptor is added to 
+the joint assignment problem. The assignment problem is then solved once over the expanded joint assignment 
+scope, so that any target affected by the conflict is considered within the same assignment step. 
+ 
+4.2 Two-Stage Assignment Objective 
+The assignment problem introduced in Section 4.1 assigns eligible candidate sensors to interceptor slots for multiple 
+involved targets under capacity constraints. The proposed method ensures that each sensor can be assigned to at 
+most one target within the current assignment event, while each involved target receives no more than its allowed 
+
+
+--- PAGE 6 ---
+number of interceptors. The method uses a two-stage assignment objective: it first maximizes the number of filled 
+interceptor slots across the involved targets and then minimizes the total assignment cost among assignments with 
+the same number of filled slots. 
+Table 1 illustrates a simplified example involving two targets, 𝑇1and 𝑇2, and five eligible candidate sensors: 𝑆10, 𝑆13, 
+𝑆14, 𝑆18, and 𝑆20. In this example, a later handover request from 𝑇2 attempts to employ 𝑆14, while 𝑆14 has already 
+been committed as an interceptor for 𝑇1. Following the expanded joint assignment defined in Section 4.1, both 𝑇1and 
+𝑇2are included in the same assignment problem. 
+Candidate Sensor Bidding cost for Target 2 Bidding Cost for Target 1 
+𝑆10 0.377 0.300 
+𝑆13 0.306 0.304 
+𝑆14 0.219 0.193 
+𝑆18 0.327 0.397 
+𝑆20 0.285 0.377 
+Table 1: Example bidding-cost matrix for two targets. 
+In this example, each target can receive up to two interceptor sensors. Therefore, the assignment problem can fill up 
+to four interceptor slots in total: two for 𝑇1and two for 𝑇2. Each candidate sensor, however, can be assigned to at 
+most one target. The algorithm therefore cannot simply select the two lowest-cost sensors for each target 
+independently, because the same sensor may be preferred by more than one target. Instead, the assignment must be 
+solved jointly over the involved targets while enforcing non-overlapping sensor use. 
+Table 2 compares the assignments produced by three different selection rules. The greedy assignment processes the 
+targets sequentially and is therefore order dependent. The MinMax assignment minimizes the worst target-level team 
+cost, which provides a fairness-oriented solution. The proposed two-stage assignment objective first fills the 
+maximum feasible number of interceptor slots and then selects the feasible assignment with the lowest total cost.  
+Algorithm Target 2 Target 2 Cost Target 1 Target 1 Cost Total Worst Team Cost 
+Greedy [T2, T1] 𝑆14, 𝑆20 0.504 𝑆10, 𝑆13 0.604 1.108 0.604 
+MinMax 𝑆13, 𝑆20 0.591 𝑆14, 𝑆18 0.590 1.182 0.591 
+Two-Stage 𝑆13, 𝑆20 0.591 𝑆10, 𝑆14 0.493 1.085 0.591 
+Table 2: Assignment comparison under greedy, MinMax, and two-stage assignment methods. 
+The greedy method assigns 𝑆14 and 𝑆20 to 𝑇2 first, leaving 𝑆10 and 𝑆13 for 𝑇1. This produces a total assignment cost 
+of 1.108. Although this result is feasible, it depends on the order in which targets are processed and does not solve 
+the joint assignment problem optimally. 
+The MinMax method considers both targets but optimizes a different objective. It selects the assignment that 
+minimizes the worst target-level team cost. In this example, MinMax assigns 𝑆13 and 𝑆20 to 𝑇2, and 𝑆14 and 𝑆18 to 
+𝑇1, producing a worst team cost of 0.591 and a total cost of 1.181. This reflects the fairness -oriented behavior of the 
+MinMax objective. 
+The proposed two-stage method selects 𝑆13 and 𝑆20 for 𝑇2, and 𝑆10 and 𝑆14 for 𝑇1. This assignment fills all four 
+interceptor slots and achieves the lowest total cost among the feasible assignments shown in Table 2. Therefore, 
+within the involved targets and eligible candidate sensors of the current assignment event, the proposed method 
+obtains the total-cost optimal assignment after satisfying the maximum-slot objective. 
+ 
+4.3 Objective Trade-off Between Fairness and Total Assignment Cost Minimization 
+The MinMax method and the proposed two-stage assignment method differ fundamentally in their optimization 
+objectives. The MinMax method minimizes the worst-case target-level team cost, leading to a fairness-oriented 
+
+--- PAGE 7 ---
+assignment that helps prevent any involved target from receiving a significantly inferior interceptor configuration. 
+This objective is meaningful when balanced tracking support across targets is the primary system priority. 
+In contrast, the proposed two-stage assignment method first maximizes the number of filled interceptor slots across 
+the involved targets and then minimizes the total assignment cost among assignments with the same number of filled 
+slots. This objective prioritizes assignment coverage and total assignment cost minimization rather than worst -case 
+fairness. Therefore, the two methods may produce different assignments under the same bidding -cost matrix: 
+MinMax may accept a higher total assignment cost to reduce the worst target-level cost, while the proposed method 
+may accept a less balanced distribution of target-level costs if doing so reduces the total assignment cost after the 
+filled-slot maximization step is satisfied. In this report, the two-stage assignment method is adopted because the goal 
+is to resolve interceptor assignment conflicts by jointly considering all targets included in the expanded joint 
+assignment and enforcing non-overlapping sensor use within the current assignment event. 
+ 
+4.4 Feasibility as a Distributed System 
+The proposed two-stage assignment method preserves the distributed DES architecture by avoiding a permanent 
+coordinator or centralized bid collector. The method changes the assignment rule, but it does not change the sensor-
+level execution logic of the original framework from [1]. Each sensor still operates according to its own FSM, 
+computes its own bid locally, and updates its own state based on the assignment result. The optimality of the method 
+refers to the event-local assignment problem over the involved targets and eligible candidate sensors, rather than 
+centralized control over the entire WSN.  
+When an active tracker predicts that interceptor support is required, it broadcasts a handover request. This request is 
+propagated through the communication network, and any non-active-tracking sensor that receives the request before 
+the bidding deadline and satisfies the feasibility conditions is treated as an eligible candidate. Each candidate sensor 
+computes its own bid cost locally according to the same bidding function. Therefore, the proposed method does not 
+require any sensor to compute costs on behalf of other sensors. 
+After receiving the request, candidate sensors broadcast their bid values during a fixed bidding window, denoted by 
+Δ𝑡bid. This window allows bid messages to propagate through the participating sensor group before the selection step 
+is executed. In the simulation, Δ𝑡bid can be set to one DES time step, or to a fraction of a time step, such as half a 
+time step, depending on the desired trade-off between communication completeness and response speed. At the end 
+of the bidding window, each participating sensor reconstructs the same event-local assignment problem using the bid 
+information received before the deadline and applies the same deterministic two-stage assignment rule. The rule is 
+identical for all participating sensors and enforces the same capacity constraints: each target can receive at most two 
+interceptors, and each sensor can be assigned to at most one target. 
+Under ideal communication, all participating sensors receive the same bid information before the deadline. In that 
+case, they reconstruct the same assignment problem and obtain the same final assignment without requiring a central 
+sensor to collect bids or broadcast the decision. If a sensor determines from the reconstructed assignment that it has 
+been selected as an interceptor, it transitions to the interceptor state and broadcasts a commitment message 
+indicating that it has accepted the assignment. If the sensor is not selected, it remains idle for later handover 
+requests. In this way, bid computation, assignment reconstruction, commitment, and state transition are all 
+performed locally. 
+The fixed bidding window also provides a practical mechanism for handling communication delay. Bids that arrive 
+before the selection deadline are included in the assignment calculation, while late bids are excluded from the 
+current assignment event. This deadline-based rule is consistent with the real-time nature of the DES framework. A 
+sensor whose bid cannot reach the participating group before the deadline cannot be safely used for the current 
+
+--- PAGE 8 ---
+handover decision, even if its motion-based bid cost is low. Therefore, communication reachability is treated as part 
+of assignment feasibility. Future implementations may incorporate communication delay or link reliability directly 
+into the bid cost, but in the present formulation this constraint is handled through the bidding deadline. 
+The total delay of the assignment process includes more than the computation time of the two-stage assignment rule. 
+It also includes the request propagation time, the bidding window, local assignment computation and commitment 
+broadcast: 
+Δt = Δtrequest + Δtbid + Δtlocal_assignment + Δtcommit 
+Therefore, real-time feasibility must be evaluated using both computation and communication costs. In the current 
+simulation, the method follows the same ideal communication assumption used in [1], so the assignment results are 
+meaningful for algorithmic comparison. However, deployment on an embedded robotic platform would require 
+measuring or bounding bid propagation delay, packet loss, commitment confirmation time, and the probability of 
+inconsistent assignment reconstruction. Thus, the proposed method remains distributed at the sensor-execution level, 
+but its practical feasibility depends on whether the communication network can support the required bidding and 
+commitment exchange within the DES selection window. 
+ 
+5. Simulated Experiments 
+5.1 Experimental Setup 
+The experiments are conducted using the simulation framework developed in [1]. The same discrete -event-system 
+(DES) architecture, sensor models, EKF-based state estimation, bidding-cost formulation, and target motion 
+configurations are adopted to ensure a fair comparison between the original MinMax-based method and the 
+proposed expanded joint assignment approach with a two-stage assignment objective. The main difference between 
+the two versions lies in how interceptor assignment conflicts are handled once h andover requests compete for the 
+same candidate sensors or when a committed interceptor is contested by a later handover request.  
+The wireless sensor network consists of 25 mobile sensors arranged in a 5 × 5 hexagonal grid with an inter -node 
+spacing 𝑑 = 12 units. Sensors have a fixed detection range 𝑟𝑑 = 1.5 units, communication range 𝑟𝑐 = 18 units, 
+which enables each sensor to coordinate with first and second-tier neighbors. The hexagonal geometry provides 
+efficient coverage while maintaining structured communication patterns for distributed coordination.  
+Because the sensor behaviors, target motion, EKF settings, and bidding-cost computation are kept the same in all 
+experiments, any differences in assignment outcomes are caused by the assignment strategy itself. Specifically, the 
+experiments compare the original MinMax-based conflict-resolution method with the proposed expanded joint 
+assignment method, which expands the joint assignment scope when a committed -interceptor conflict occurs and 
+solves the resulting assignment problem using a two-stage objective. Sections 5.2 and 5.3 use a two-target scenario 
+to demonstrate the committed-interceptor conflict and the effect of expanding the joint assignment scope, while 
+Section 5.4 uses a three-target example to compare the assignment-cost outcomes under MinMax and the proposed 
+two-stage assignment method. 
+ 
+5.2 Committed-Interceptor Conflict in the Baseline Method 
+A two-target scenario is first used to illustrate the committed-interceptor conflict in the baseline method. This 
+example focuses on the case where a later handover request affects an existing interceptor assignment that was 
+already committed to another target. 
+At 𝑡 = 39.2s, Target 1 selected 𝑆10 and 𝑆14 as its interceptors. 𝑆14 was therefore committed to Target 1 and started 
+moving toward the predicted interception region for Target 1, as shown in Figure 3. 
+
+--- PAGE 9 ---
+ 
+Figure 2: Baseline snapshot t=39.4s, 𝑆10and 𝑆14 are committed to Target 1. 
+ 
+However, at t = 40.0s, Target 2 entered the selection stage after issuing a later handover request. During this 
+selection, Target 2 selected 𝑆20  and 𝑆14. Since 𝑆14 had already been committed to Target 1, this created a 
+committed-interceptor conflict. As shown in Figure 2, Target 2 took over 𝑆14, and Target 1 lost one of its committed 
+interceptors. 
+ 
+Figure 3: Baseline V45 snapshot at t=40.0s, Target 2 takes over 𝑆14 from Target 1. 
+This case shows that the baseline method does not include the previously served target in the assignment problem 
+when one of its committed interceptors is contested by a later handover request. Although Target 1 and Target 2 were 
+not handled within the same assignment procedure, the later handover request from Target 2 still affected the 
+existing interceptor assignment of Target 1. This motivates the joint assignment scope expansion mechanism 
+introduced in Section 4.1. 
+ 
+
+
+--- PAGE 10 ---
+5.3 Effect of the Expanded Joint Assignment Scope 
+The proposed method addresses the committed-interceptor conflict by expanding the joint assignment scope before 
+solving the assignment problem. When the later handover request from Target 2 attempts to use 𝑆14, the system 
+detects that 𝑆14 has already been committed to Target 1. Therefore, Target 1 is added to the joint assignment scope 
+together with the current calling target, Target 2. 
+The assignment problem is then solved once over the expanded joint assignment and the eligible candidate sensors. 
+This prevents the later handover request from directly overwriting the existing interceptor assignment of Target 1. 
+Instead, both targets are considered within the same assignment step, and the two-stage assignment rule selects a 
+feasible non-overlapping sensor allocation. 
+ 
+Figure 4: Proposed expanded joint assignment at 𝑡 = 40.0s. 
+Figure 4 shows the result after applying the proposed expanded joint assignment approach. Target 2 no longer takes 
+𝑆14 away from Target 1. Instead, Target 2 selects 𝑆13 and 𝑆20, while Target 1 retains 𝑆14 as one of its committed 
+interceptors. This confirms that the proposed method includes the previously served target in the assignment 
+problem when its committed interceptor is contested by a later handover request.  
+ 
+5.4 Effect of Expanded Joint Assignment Scope and Assignment Objective in a Three-Target Event 
+This section uses a three-target event to separate two effects: the expanded joint assignment scope and assignment-
+objective selection. The original MinMax-based method without the expanded joint assignment scope is discussed as 
+a scope limitation, because it would not form the full [𝑇3, 𝑇2, 𝑇1] assignment problem as a single event-level 
+instance. Therefore, the event-level cost comparison is made only between methods that use the same expanded 
+assignment scope: MinMax with expanded assignment scope and the proposed two-stage assignment with expanded 
+assignment scope. 
+Figure 5 illustrates the three-target expanded joint assignment event. Target 3 first issues a handover request. During 
+the assignment process, 𝑆20  is found to have already been committed to Target 2, so Target 2 is added to the 
+expanded joint assignment. A further committed-interceptor overlap occurs when the assignment process involving 
+Target 2 includes 𝑆13, which has already been committed to Target 1. As a result, the assignment scope expands from 
+a single calling target to the three-target assignment scope [𝑇3, 𝑇2, 𝑇1]. This example shows that the expanded joint 
+
+
+--- PAGE 11 ---
+assignment scope prevents previously served targets from being excluded when their committed interceptors are 
+contested by later handover requests. 
+                     
+ Figure 5: Three-target expanded joint assignment event at 𝑡 = 44.2s. 
+Once the expanded joint assignment scope is fixed, MinMax and the proposed two-stage assignment differ only in 
+their assignment objective. MinMax prioritizes the worst target-level team cost, while the proposed two-stage 
+objective first maximizes the number of filled interceptor slots and then minimizes the total assignment cost.  
+ 
+Method Target 3 assignment 
+(team cost) 
+Target 2 assignment 
+(team cost) 
+Target 1 assignment 
+(team cost) 
+Worst team cost Total Cost 
+MinMax with expanded joint 
+assignment scope 
+𝑆19, 𝑆20 (0.57317) 𝑆18, 𝑆24 (0.67203) 𝑆9, 𝑆10 (0.22667) 0.67203 1.47187 
+Two-Stage with expanded 
+joint assignment scope 
+𝑆13, 𝑆15  (0.64247) 𝑆19, 𝑆20  (0.46429) 𝑆9, 𝑆10 (0.22667) 0.64247 
+ 
+1.33343 
+ 
+Table 3: Assignment comparison for  the three-target event. 
+Table 3 shows that both methods fill all six requested interceptor slots, but the two-stage assignment objective 
+achieves a lower total assignment cost, reducing the cost from 1.47187 to 1.33343. This result supports the event -
+level objective defined in this report: after the filled-slot maximization step is satisfied, the two-stage method selects 
+the feasible non-overlapping assignment with the lowest total cost. 
+To complement the event-level comparison, the total tracked target time is also recorded over the full simulation. 
+This metric is reported in target-seconds, where one target-second represents one target being successfully tracked 
+for one second. 
+Method T1 tracked time T2 tracked time T3 tracked time Total tracked time ratio 
+MinMax with expanded joint 
+assignment scope 
+27.40 / 75.00 s 25.20 / 71.00 s 17.30 / 68.50 s 32.59% 
+Two-Stage with expanded 
+joint assignment scope 
+39.00 / 75.00 s 14.70 / 71.00 s 14.80 / 68.50 s 31.94% 
+Table 4: Full-simulation tracked-target time comparison for the three-target example. 
+Table 4 provides a complementary observation rather than the primary event-level comparison. In this simulation 
+seed, the two-stage assignment objective produces a slightly lower total tracked-time ratio than the MinMax variant, 
+31.94% compared with 32.59%. The per-target results also show that the two-stage objective shifts more tracking 
+time toward Target 1, while Target 2 and Target 3 receive less tracked time than under MinMax. This does not 
+contradict the event-level assignment result, because full-simulation tracking time depends on later target motion, 
+subsequent handover timing, future conflicts, and downstream effects of earlier assignment decisions.  
+Overall, this example shows that the expanded joint assignment scope and assignment-objective selection should be 
+understood separately. The expanded joint assignment scope determines which targets are included in the 
+
+
+--- PAGE 12 ---
+assignment problem, while the choice between MinMax and the two-stage assignment objective determines how the 
+system prioritizes balanced target-level support versus lower event-level total assignment cost. 
+ 
+6. Conclusion and Future Work 
+This report studied interceptor assignment conflicts in a mobile WSN for cooperative multi-target tracking. Building 
+on the DES-based proactive handover framework in [1], the report focused on the case where a later handover 
+request contests a sensor that has already been committed as an interceptor for another target. To address this issue, 
+the proposed method expands the joint assignment scope beyond the current calling targets so that any previously 
+served target whose committed interceptor is contested is also included in the assignment problem. The resulting 
+assignment is solved using a two-stage objective that first maximizes the number of filled interceptor slots and then 
+minimizes the total assignment cost. Simulation examples show that the expanded joint assignment prevents 
+previously served targets from being excluded during committed-interceptor conflicts, while the two-stage 
+assignment objective achieves lower event-level total assignment cost than MinMax in the examined three-target 
+event. The results also show that MinMax remains a meaningful fairness-oriented baseline, while the proposed two-
+stage method prioritizes event-level total assignment cost minimization. 
+ 
+Future work should evaluate the proposed method under more realistic communication and hardware constraints. 
+The current simulation assumes ideal communication, but physical deployment would require measuring bid 
+propagation delay, packet loss, commitment confirmation time, and the possibility of inconsistent assignment 
+reconstruction among sensors. In addition, the simulation results suggest that lower event -level assignment cost does 
+not necessarily guarantee better aggregate tracked-target time in every seed. Future work should therefore 
+investigate adaptive objective selection, where the system can switch between MinMax and  the two-stage objective 
+depending on target priority, uncertainty level, fairness requirements, or long-horizon tracking performance. More 
+simulation seeds and more diverse multi-target trajectories should also be tested to evaluate the robustness of the 
+expanded joint assignment under different conflict patterns. 
+ 
+7. References 
+[1] N. Najafizadeh Sari, Y . Sang, G. Nejat, and B. Benhabib, “Reconfigurable Wireless Sensor Network Coordination for Simultaneous Multi-
+Target Tracking”  
+8. Appendix: 
+The appendix includes the main simulation script and representative log files used for the expanded joint assignment 
+experiments. 
+• Example_V47_Yeqi.m — main simulation script for the V47 expanded joint assignment experiment.  
+• example2-expanded-group-two-stage.log — log file for the expanded joint assignment experiment using 
+the two-stage assignment objective.  
+• example2- expanded-group-minmax.log — log file for the expanded joint assignment experiment using the 
+MinMax assignment objective. 
+

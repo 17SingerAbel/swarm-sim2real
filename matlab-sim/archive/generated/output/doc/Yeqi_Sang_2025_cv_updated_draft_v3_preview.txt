@@ -1,0 +1,39 @@
+Yeqi (Abel) Sang
+Email: abel.sang@mail.utoronto.ca | Phone: (+1) 647-937-7099 | Toronto, ON
+Professional Summary
+Software and Robotics Engineer with 6 years of experience across cloud infrastructure, CI/CD, full-stack development, data analysis, and robotics-related software systems. Strong background in Python, SQL, simulation, and state estimation, with hands-on experience building distributed tracking and coordination algorithms for research and production environments.
+Core Qualifications
+6 years of experience spanning software engineering, robotics-related development, cloud infrastructure, CI/CD, full-stack development, and data analysis.
+Strong programming skills in Python and SQL, with additional experience in MATLAB, Node.js, and full-stack application development.
+Hands-on experience with Extended Kalman Filter (EKF), state estimation, distributed systems, and simulation-based algorithm development for robotics-related applications.
+Familiar with ROS 2 and experienced in 3D development and visualization with Unity, Three.js, and WebGL.
+Working knowledge of cloud infrastructure and DevOps tooling, including AWS, Docker, CI/CD pipelines, and shared VM/server environment management.
+Work Experience
+Data Scientist, Scotiabank, Toronto, Canada                                                                                                   [Start Date] - Present
+Built benchmarking analyses for AML client risk models to evaluate current-model performance, compare approaches, and identify opportunities for improvement.
+Partnered with business and technical stakeholders to gather requirements, communicate findings, and support model enhancement initiatives in the Anti-Money Laundering domain.
+Managed team virtual machines and server environments to maintain reliable infrastructure for analytics and development workflows.
+DevOps Engineer, Allied Technical Software Inc., Toronto, Canada                                                                         2022.11 - 2025.2
+Integrated Snowflake-based LLM and AI pipelines that routed applications to different models by user role, improving scalability and data efficiency.
+Maintained and modernized legacy systems inherited through acquisition, preserving system stability and operational continuity.
+Automated lower-environment hibernation workflows to reduce cloud infrastructure costs while maintaining development availability.
+Managed end-to-end CI/CD pipelines, virtual machines, and dynamic proxy provisioning to improve deployment reliability and support operational needs.
+Software Engineer, Orbiseed Technology Inc, Toronto, Canada                                                                              2019.09 - 2022.10
+Collaborated with algorithm engineers to develop and productionize a Python and OpenCV pipeline for generating 3D building models from 2D inputs with fewer corner cases.
+Built a web-based 3D viewer demo with Three.js and WebGL in one month to showcase Building Information System outputs and support investor-facing presentations.
+Led Lunch-and-Learn sessions to share new technologies and practical engineering learnings across teams.
+Education
+Master of Engineering, University of Toronto, Canada                                                                                                  2023.09 - 2025 (Completed)
+Department: Mechanical & Industrial Engineering
+Relevant Coursework: Cloud-Based Data Analytics, AI Applications in Robotics, Perception for Robotics, State Estimation
+Bachelor of Science, University of Toronto, Canada                                                                                                      2015.09 - 2019.06
+Specialist in Computer Science & Minor in Statistics
+Main Course: Computer Graphics, Computer Vision, Machine Learning
+Projects & Research
+Master of Engineering Project - Cooperative Multi-Target Tracking in Mobile Wireless Sensor Networks, University of Toronto                     2025
+Developed a MATLAB simulation for cooperative multi-target tracking in a mobile wireless sensor network, coordinating a 25-node sensor swarm to track up to 3 moving targets.
+Implemented per-sensor Extended Kalman Filter (EKF) state estimation and proactive handover logic in a distributed swarm system, enabling the network to predict target loss and dispatch interceptors before tracking failure.
+Designed and extended conflict-resolution algorithms for simultaneous handover events in a distributed event-driven system, introducing global assignment logic and validating improvements through simulation-based A/B testing against legacy strategies.
+Research Assistant at DGP Lab, University of Toronto                                                                                               2022.10 - 2024.9
+Contributed to the CHI 2025-accepted paper "VibraForge: A Scalable Prototyping Toolkit for Creating Spatialized Vibrotactile Feedback Systems."
+Developed a VR testing environment and a coordinate-mapping framework to align virtual and real-world tracking systems for evaluation.
