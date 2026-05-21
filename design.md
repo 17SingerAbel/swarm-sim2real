@@ -300,7 +300,7 @@ The sensor farthest from home among a departing group is prioritized to return f
 | Comm. range | — | 18 units |
 | Sensor speed | v_s | 0.75 units/s |
 | Time step | dt | 0.1 s |
-| Simulation duration | — | 82 s |
+| Simulation duration | — | 75 s |
 | EKF process noise | Q | 0.01 · I₂ |
 | EKF measurement noise | R | 0.0025 · I₂ |
 | Velocity convergence threshold | — | 0.006 units²/s² |

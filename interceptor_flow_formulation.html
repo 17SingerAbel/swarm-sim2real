@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Interceptor Allocation via Min-Cost Max-Flow</title>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --paper: #fffdf8;
+      --ink: #20242c;
+      --muted: #5b6372;
+      --rule: #d7cfbe;
+      --accent: #7c4c1f;
+      --soft: #f1e6d6;
+      --code: #f4efe5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 36px 18px;
+      background: linear-gradient(180deg, #efe7d8 0%, var(--bg) 100%);
+      color: var(--ink);
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.68;
+    }
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--rule);
+      box-shadow: 0 14px 42px rgba(32, 36, 44, 0.08);
+      padding: 56px 68px;
+    }
+    h1, h2, h3 { line-height: 1.2; margin: 0 0 14px; }
+    h1 {
+      font-size: 2.15rem;
+      text-align: center;
+      color: #2b241c;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      text-align: center;
+      color: var(--muted);
+      margin-bottom: 34px;
+      font-size: 1rem;
+    }
+    h2 {
+      margin-top: 34px;
+      padding-top: 10px;
+      font-size: 1.38rem;
+      color: var(--accent);
+      border-top: 1px solid var(--rule);
+    }
+    h3 {
+      margin-top: 20px;
+      font-size: 1.08rem;
+      color: #3a342b;
+    }
+    p { margin: 0 0 14px; font-size: 1.04rem; }
+    ul, ol { margin: 0 0 16px 22px; padding: 0; }
+    li { margin-bottom: 8px; }
+    .equation, .codeblock {
+      background: var(--code);
+      border-left: 4px solid var(--accent);
+      padding: 14px 18px;
+      margin: 16px 0;
+      white-space: pre-wrap;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 0.96rem;
+    }
+    .note {
+      background: var(--soft);
+      border: 1px solid #dbc1a1;
+      padding: 14px 18px;
+      margin: 16px 0;
+    }
+    .inline {
+      font-family: "Courier New", Courier, monospace;
+      background: var(--code);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 0.95em;
+    }
+    .diagram {
+      background: #fcfaf4;
+      border: 1px solid var(--rule);
+      padding: 18px;
+      margin: 18px 0;
+      overflow-x: auto;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 0.95rem;
+      white-space: pre;
+    }
+    @media (max-width: 760px) {
+      body { padding: 18px 10px; }
+      .page { padding: 28px 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>Global Interceptor Allocation via Min-Cost Max-Flow</h1>
+    <div class="subtitle">Graph representation, mathematical formulation, computational complexity, and online feasibility.</div>
+
+    <h2>1. Graph Representation</h2>
+    <p>
+      The interceptor allocation problem can be represented as a layered flow network. The key idea is to expand each target
+      into <span class="inline">m</span> identical interceptor slots. Instead of assigning sensors directly to targets,
+      the algorithm assigns each sensor to one target-slot node.
+    </p>
+
+    <h3>General k-target, m-slot network</h3>
+    <div class="diagram">Layer 1                 Layer 2                       Layer 3                               Layer 4
+
+  Source s      Candidate sensors            Target slots                         Sink t
+
+     s  ----->   sensor 1   -----------\
+      \          sensor 2   ------------\----> (target 1, slot 1) ----\
+       \         sensor 3   -------------\---> (target 1, slot 2) -----\
+        \        ...                       \--> ...                      ---> t
+         \       sensor n   --------------/---> (target 2, slot 1) -----/
+          \                               /---> (target 2, slot 2) ----/
+           \-----------------------------> ... 
+                                           \--> (target k, slot m)
+
+Edge types:
+1. s -> sensor i                  capacity = 1, cost = 0
+2. sensor i -> (target j, slot r) capacity = 1, cost = c_ij
+3. (target j, slot r) -> t       capacity = 1, cost = 0</div>
+
+    <p>
+      The source-to-sensor edges enforce that each sensor can be used at most once. The slot-to-sink edges enforce that each
+      target slot can receive at most one sensor. The sensor-to-slot edges encode the actual assignment decisions.
+    </p>
+
+    <div class="note">
+      If a sensor-target pair is infeasible, for example because the sensor is already committed, cannot arrive in time, or
+      violates a hard operational constraint, the corresponding edge is simply omitted from the graph.
+    </div>
+
+    <h2>2. Mathematical Formulation</h2>
+    <p>
+      Let <span class="inline">S = {1,2,...,n}</span> be the set of eligible interceptor sensors, and let
+      <span class="inline">T = {1,2,...,k}</span> be the set of targets requesting interceptor support. Each target may receive
+      at most <span class="inline">m</span> interceptors.
+    </p>
+
+    <p>
+      For each feasible sensor-target pair <span class="inline">(i,j)</span>, let <span class="inline">c_ij</span> denote the assignment cost.
+      Define the binary decision variable
+    </p>
+
+    <div class="equation">x_ij = 1,  if sensor i is assigned to target j
+x_ij = 0,  otherwise</div>
+
+    <p>The cost of assigning sensor <span class="inline">i</span> to target <span class="inline">j</span> is derived from the bidding model:</p>
+
+    <div class="equation">c_ij = w1 * P_home(i)
+     + w2 * P_spatial(i,j)
+     + w3 * P_temporal(i,j)
+     + w4 * P_uncertainty(i,j)</div>
+
+    <p>where the individual terms can be defined as:</p>
+
+    <div class="equation">P_home(i)      = ||p_i - p_i^home|| / d_max
+P_spatial(i,j) = ||p_i - p_j^int|| / d_max
+P_uncertainty(i,j) = 1 - gamma_ij</div>
+
+    <p>
+      Here, <span class="inline">p_i</span> is the current position of sensor <span class="inline">i</span>,
+      <span class="inline">p_i^home</span> is its home position, <span class="inline">p_j^int</span> is the intercept point of target
+      <span class="inline">j</span>, <span class="inline">d_max</span> is a normalization constant such as the maximum network distance,
+      and <span class="inline">gamma_ij</span> is the shared confidence value associated with sensor <span class="inline">i</span> and target
+      <span class="inline">j</span>. The term <span class="inline">P_temporal(i,j)</span> is a timing penalty based on the difference between the
+      sensor travel time and the target arrival time at the intercept point.
+    </p>
+
+    <h3>General constrained assignment model</h3>
+    <div class="equation">minimize    sum over i in S, j in T  c_ij x_ij
+
+subject to  sum over j in T x_ij <= 1,   for all i in S
+            sum over i in S x_ij <= m,    for all j in T
+            x_ij in {0,1}</div>
+
+    <p>
+      The first constraint ensures that each sensor is assigned at most once. The second constraint ensures that each target
+      receives at most <span class="inline">m</span> interceptors.
+    </p>
+
+    <h3>Coverage-first objective</h3>
+    <p>
+      Since the practical objective is not only to minimize cost but also to maximize target coverage, the optimization should
+      be interpreted in lexicographic form:
+    </p>
+
+    <ol>
+      <li>maximize the total number of assigned interceptor slots,</li>
+      <li>among all maximum-coverage assignments, minimize the total assignment cost.</li>
+    </ol>
+
+    <p>
+      An equivalent shortage-based formulation introduces a shortage variable for each target:
+    </p>
+
+    <div class="equation">u_j = m - sum over i in S x_ij,   u_j >= 0</div>
+
+    <p>and solves:</p>
+
+    <div class="equation">first:   minimize   sum over j in T u_j
+then:    minimize   sum over i in S, j in T c_ij x_ij</div>
+
+    <p>
+      This directly captures the design requirement that each target should receive as many interceptors as possible, and should
+      only remain under-served when the number of feasible candidates is insufficient.
+    </p>
+
+    <h3>Flow-network construction</h3>
+    <p>
+      To convert the problem into min-cost max-flow, each target <span class="inline">j</span> is expanded into
+      <span class="inline">m</span> slot nodes:
+    </p>
+
+    <div class="equation">(j,1), (j,2), ..., (j,m)</div>
+
+    <p>The flow network is built as follows:</p>
+    <ul>
+      <li>Add a source node <span class="inline">s</span> and a sink node <span class="inline">t</span>.</li>
+      <li>For each sensor <span class="inline">i</span>, add edge <span class="inline">s -> i</span> with capacity 1 and cost 0.</li>
+      <li>For each feasible pair <span class="inline">(i,j)</span> and for each slot <span class="inline">r = 1,...,m</span>, add edge <span class="inline">i -> (j,r)</span> with capacity 1 and cost <span class="inline">c_ij</span>.</li>
+      <li>For each target slot <span class="inline">(j,r)</span>, add edge <span class="inline">(j,r) -> t</span> with capacity 1 and cost 0.</li>
+    </ul>
+
+    <p>
+      Solving the resulting min-cost max-flow instance yields a globally feasible allocation that satisfies uniqueness, target
+      capacity, and cost optimality under the chosen objective.
+    </p>
+
+    <h2>3. Computational Complexity</h2>
+    <p>
+      Let <span class="inline">n</span> be the number of candidate sensors, <span class="inline">k</span> the number of simultaneously calling targets,
+      and <span class="inline">m</span> the maximum number of interceptor slots per target. Define
+      <span class="inline">q = k m</span> as the total number of target slots.
+    </p>
+
+    <h3>Step 1: Candidate filtering</h3>
+    <p>
+      Filtering eligible interceptor sensors requires checking each sensor against the active-tracker and feasibility conditions.
+      A conservative complexity bound is:
+    </p>
+    <div class="equation">O(nk)</div>
+
+    <h3>Step 2: Cost computation</h3>
+    <p>
+      The assignment cost <span class="inline">c_ij</span> is computed once per feasible sensor-target pair. Since slots of the same target share the same
+      cost value, cost computation scales as:
+    </p>
+    <div class="equation">O(nk)</div>
+
+    <h3>Step 3: Graph construction</h3>
+    <p>
+      The flow graph contains:
+    </p>
+    <div class="equation">V = n + km + 2</div>
+    <div class="equation">E = n + nkm + km = O(nkm)</div>
+
+    <p>
+      Therefore, graph construction takes:
+    </p>
+    <div class="equation">O(nkm)</div>
+
+    <h3>Step 4: Min-cost max-flow solution</h3>
+    <p>
+      If the problem is solved using a successive shortest path algorithm with Dijkstra and node potentials, the maximum flow value is:
+    </p>
+    <div class="equation">F = min(n, km)</div>
+
+    <p>
+      Each augmentation requires one shortest-path computation of approximately:
+    </p>
+    <div class="equation">O(E log V)</div>
+
+    <p>
+      Hence, the overall time complexity is:
+    </p>
+    <div class="equation">O(F E log V)
+= O(min(n,km) * nkm * log(n+km))</div>
+
+    <h3>Alternative bipartite matching view</h3>
+    <p>
+      Since the problem is also a weighted bipartite matching between <span class="inline">n</span> sensors and
+      <span class="inline">q = km</span> target slots, an expanded assignment matrix may be solved by a weighted matching method such as the Hungarian algorithm.
+      If the matrix is padded to square dimension <span class="inline">N = max(n, km)</span>, then the complexity is:
+    </p>
+    <div class="equation">O(N^3) = O(max(n,km)^3)</div>
+
+    <p>
+      This expression is often easier to present in a report, while the min-cost max-flow bound is more general and more flexible
+      for later extensions.
+    </p>
+
+    <h3>Total online optimization cost</h3>
+    <p>
+      The total runtime per handover event can therefore be summarized as:
+    </p>
+    <div class="equation">O(nk) + O(nk) + O(nkm) + O(min(n,km) * nkm * log(n+km))</div>
+
+    <p>
+      The dominant term is the optimization stage itself:
+    </p>
+    <div class="equation">O(min(n,km) * nkm * log(n+km))</div>
+
+    <h2>4. Online Feasibility Metrics</h2>
+    <p>
+      To claim that the algorithm is suitable for online robotic or WSN deployment, asymptotic complexity alone is not enough.
+      It should also be evaluated with runtime-oriented metrics tied to the handover decision window.
+    </p>
+
+    <h3>Metric 1: Solve time per reallocation event</h3>
+    <p>
+      Let <span class="inline">tau_solve</span> denote the wall-clock time required to complete one interceptor allocation event, including candidate filtering,
+      cost computation, graph construction, optimization, and result decoding.
+    </p>
+    <div class="equation">tau_solve = total optimization latency per handover event</div>
+    <p>Recommended statistics:</p>
+    <ul>
+      <li>mean solve time,</li>
+      <li>median solve time,</li>
+      <li>95th percentile solve time,</li>
+      <li>worst-case solve time.</li>
+    </ul>
+
+    <h3>Metric 2: Real-time ratio</h3>
+    <p>
+      Let <span class="inline">tau_avail</span> be the available decision time between handover trigger and the latest safe dispatch instant.
+      Define the real-time ratio:
+    </p>
+    <div class="equation">R_rt = tau_solve / tau_avail</div>
+    <p>
+      If <span class="inline">R_rt &lt; 1</span>, then the optimization finishes before the decision deadline. If
+      <span class="inline">R_rt</span> is significantly below 1, the online feasibility margin is strong.
+    </p>
+
+    <h3>Metric 3: Deadline satisfaction rate</h3>
+    <p>
+      Define the fraction of handover events solved before their deadlines:
+    </p>
+    <div class="equation">eta_deadline =
+number of events solved before deadline / total number of events</div>
+
+    <p>
+      A value close to 1 indicates that the optimizer is consistently fast enough for online use.
+    </p>
+
+    <h3>Metric 4: Scaling profile</h3>
+    <p>
+      To support claims of practical deployability, the solve time should be measured while varying:
+    </p>
+    <ul>
+      <li>the number of candidate sensors <span class="inline">n</span>,</li>
+      <li>the number of simultaneous calling targets <span class="inline">k</span>,</li>
+      <li>the slot capacity per target <span class="inline">m</span>.</li>
+    </ul>
+
+    <p>
+      This produces an empirical runtime profile that complements the asymptotic complexity analysis.
+    </p>
+
+    <h3>Metric 5: Optimality gap versus the current heuristic</h3>
+    <p>
+      To justify replacing the existing heuristic, the improvement in solution quality should be quantified.
+      Let <span class="inline">C_heuristic</span> be the total assignment cost produced by the current method, and let
+      <span class="inline">C_optimal</span> be the cost produced by min-cost max-flow.
+    </p>
+
+    <div class="equation">gap = (C_heuristic - C_optimal) / C_optimal</div>
+
+    <p>
+      A positive gap shows that the current method is sub-optimal. If the optimality gap is nontrivial while
+      <span class="inline">tau_solve</span> remains small, then the proposed algorithm is both more optimal and still online-feasible.
+    </p>
+
+    <h2>5. Why Online Feasibility is Plausible in This Project</h2>
+    <p>
+      In the current WSN simulation, the problem scale is tightly bounded. There are at most 25 sensors, at most 3 active targets,
+      and at most 2 interceptor slots per target. Therefore:
+    </p>
+
+    <div class="equation">n <= 25,   k <= 3,   m = 2,   q = km <= 6</div>
+
+    <p>The resulting graph is very small:</p>
+    <div class="equation">V = n + km + 2 <= 33
+E approx nkm <= 25 * 3 * 2 = 150</div>
+
+    <p>
+      This is well within the range of lightweight online optimization. Consequently, online feasibility can be argued from two sides:
+    </p>
+    <ul>
+      <li>theoretical boundedness of the optimization problem size,</li>
+      <li>empirical runtime measurements using the metrics above.</li>
+    </ul>
+
+    <div class="note">
+      A strong evaluation statement would be: the proposed optimizer is considered online-feasible if it solves essentially all handover
+      events before deadline, with a real-time ratio significantly below 1, while also reducing allocation cost relative to the current heuristic.
+    </div>
+
+    <h2>6. Suggested Positioning in the Report</h2>
+    <p>
+      The current MATLAB implementation may be described as a heuristic bidding-and-conflict-repair strategy that is effective for single-target
+      allocation and partially effective for the two-target case. The proposed min-cost max-flow formulation provides a unified global assignment model,
+      extends naturally to general <span class="inline">k</span>-target and <span class="inline">m</span>-slot settings, offers exact optimality under the chosen objective,
+      and remains computationally lightweight at the present system scale.
+    </p>
+  </main>
+</body>
+</html>

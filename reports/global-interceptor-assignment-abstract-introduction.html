@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Abstract, Introduction, and Sections 3-4 Draft - Optimal Interceptor Assignment</title>
+  <style>
+    :root {
+      --paper: #fffdf8;
+      --bg: #f5f1e8;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --accent: #8a5a44;
+      --line: #ddd3c3;
+      --panel: #f6efe5;
+    }
+
+    body {
+      margin: 0;
+      padding: 40px 20px;
+      background: linear-gradient(180deg, #f2ede3 0%, #faf8f3 100%);
+      color: var(--ink);
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.75;
+    }
+
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.06);
+      padding: 44px 52px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin-top: 0;
+      color: #2c2117;
+    }
+
+    h1 {
+      font-size: 2.1rem;
+      margin-bottom: 0.35em;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+      margin-top: 2em;
+      margin-bottom: 0.65em;
+      padding-bottom: 0.25em;
+      border-bottom: 2px solid var(--line);
+    }
+
+    h3 {
+      font-size: 1.08rem;
+      margin-top: 1.25em;
+      margin-bottom: 0.45em;
+      color: var(--accent);
+    }
+
+    p {
+      margin: 0 0 1.05em;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: 1.03rem;
+      margin-bottom: 1.4em;
+    }
+
+    .framing {
+      background: var(--panel);
+      border-left: 4px solid var(--accent);
+      padding: 14px 16px;
+      margin: 20px 0 30px;
+    }
+
+    .tone {
+      color: var(--muted);
+      font-style: italic;
+      margin-top: 0.8em;
+    }
+
+    code {
+      background: #f1ece3;
+      padding: 0.08em 0.35em;
+      border-radius: 4px;
+      font-size: 0.95em;
+    }
+
+    .equation {
+      margin: 0.9em 0 1em;
+      padding: 0.9em 1em;
+      background: #f8f3eb;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      font-family: "Courier New", Courier, monospace;
+      white-space: pre-wrap;
+      line-height: 1.55;
+    }
+
+    .symbol-list {
+      margin: 0.35em 0 1em 1.2em;
+    }
+
+    .symbol-list li {
+      margin: 0.3em 0;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>Abstract, Introduction, and Sections 3-4 Draft</h1>
+      <p class="lead">
+        Opening and early-method sections for the report, with the novelty anchored in
+        <code>affected-target scope</code>, <code>lexicographic objective</code>, and
+        <code>optimal assignment structure</code>.
+      </p>
+
+      <div class="framing">
+        <strong>Framing sentence:</strong>
+        The original DES/FSM handover pipeline is retained, but the conflict-resolution
+        formulation is revised in affected-target scope, assignment objective, and
+        assignment structure.
+      </div>
+    </header>
+
+    <section>
+      <h2>Abstract</h2>
+      <p>
+        This report studies interceptor assignment conflicts in a mobile wireless sensor
+        network (WSN) for cooperative multi-target tracking. In Naeimeh's previous work
+        [1], interceptor conflicts were resolved through a MinMax objective that
+        attempts to minimize the worst team cost among the targets involved in the same
+        conflict-resolution step. The formulation provides a fairness-oriented baseline,
+        but it does not directly optimize overall assignment efficiency. In addition,
+        when a later handover request takes over a sensor that has already been
+        committed to another target, the previously served target will lose that
+        committed sensor, thereby reducing its probability of successful interception.
+      </p>
+      <p>
+        The revised method differs from the previous approach in three ways. First, it
+        expands the affected-target set beyond the current calling targets to include
+        any previously served target whose committed interceptor is taken over by a
+        later request. Second, it adopts a lexicographic objective that first
+        maximizes the number of assigned interceptor slots across the affected targets
+        and then minimizes the total assignment cost. Third, it replaces
+        non-overlapping two-sensor team comparison with an optimal sensor-to-target
+        assignment over all affected targets and all eligible candidate sensors. Under
+        ideal communication assumptions in simulation, the resulting formulation
+        retains the distributed execution logic of the original DES framework while
+        providing a different mechanism for resolving interceptor assignment conflicts;
+        the communication requirements and implications for physical-platform
+        implementation are discussed later in the report.
+      </p>
+    </section>
+
+    <section>
+      <h2>Introduction</h2>
+      <p>
+        Mobile wireless sensor networks (WSNs) provide a flexible platform for
+        cooperative multi-target tracking because mobile sensors can reposition
+        themselves in response to target motion and local tracking needs. In
+        Naeimeh's previous work [1], this capability was organized through a
+        distributed Discrete Event System (DES) framework in which sensors coordinate
+        proactive handover through local bid computation, handover-request
+        broadcasting, and Finite State Machine (FSM)-based execution. During
+        operation, an active tracker issues a handover request when target loss is
+        predicted, and available candidate sensors participate in an auction-like
+        bidding process to determine which sensors should serve as interceptors. The
+        selected interceptors then move toward the predicted interception region to
+        support tracking continuity before the current tracker loses the target. This
+        distributed handover framework provides the system baseline for the present
+        report.
+      </p>
+      <p>
+        This report focuses on a narrow but important issue within that framework:
+        interceptor assignment conflict resolution. In the DES framework, interceptor
+        assignment conflicts arise when multiple handover requests compete for the same
+        candidate sensors or when a later handover request attempts to use a sensor
+        already committed to another target. In the previous method, conflicts among
+        handover requests within the same conflict-resolution step were handled through
+        a MinMax objective that attempts to minimize the worst team cost among the
+        involved targets. This formulation provides a fairness-oriented baseline and
+        helps reduce the likelihood that any target receives a poor interceptor
+        configuration. However, because the MinMax objective optimizes the worst-case
+        team cost rather than the total assignment cost, it does not necessarily
+        produce the most efficient overall assignment. In addition, although the
+        previous work already provides a reasonable DES-based mechanism for resolving
+        conflicts that occur within an assignment interval, another limitation remains:
+        a later handover request can reassign a sensor that has already been committed
+        to another target without simultaneously reconsidering the target that loses
+        this interceptor. When that happens, the previously served target loses one of
+        its committed interceptors, which can reduce its probability of successful
+        interception.
+      </p>
+      <p>
+        The contribution of this report is a reformulation of the interceptor
+        conflict-resolution mechanism together with a corresponding optimal assignment
+        procedure. Compared with the previous MinMax-based method, the revised method
+        differs in three ways. First, it expands the affected target set beyond the
+        current calling target to include any previously served target whose committed
+        interceptor is taken over by a later handover request. Second, it adopts a
+        lexicographic objective that first maximizes the number of assigned
+        interceptor slots across the affected targets and then minimizes the total
+        assignment cost. Third, it replaces the previous comparison of
+        non-overlapping two-sensor teams with a constrained sensor-to-target
+        assignment model that jointly enforces the interceptor capacity of each
+        target and the one-target-at-a-time constraint of each sensor. Under ideal
+        communication assumptions in simulation, this revised formulation retains the
+        distributed execution logic of the original DES framework while providing a
+        different mechanism for resolving interceptor assignment conflicts. The
+        communication requirements and implications for physical-platform
+        implementation are discussed later in the report.
+      </p>
+    </section>
+
+    <section>
+      <h2>3. System Model and Problem Formulation</h2>
+
+      <h3>3.1 System Model and Assumptions</h3>
+      <p>
+        This section models the interceptor assignment problem. Consider a WSN with
+        <em>N</em> mobile sensors that cooperatively track up to <em>K</em> targets.
+        Each target can be assigned up to two active tracking sensors, and up to
+        <em>m</em> interceptor sensors when a potential target loss is predicted.
+      </p>
+      <p>
+        Each sensor, <em>i ∈ N = {1, ..., N}</em>, has a home position,
+        <em>h<sub>i</sub> ∈ R<sup>2</sup></em> and a current position
+        <em>s<sub>i</sub>(t) ∈ R<sup>2</sup></em>. Each target,
+        <em>k ∈ K = {1, ..., K}</em>, has state
+        <em>x<sub>k</sub>(t) = [p<sub>k</sub>(t), v<sub>k</sub>(t)]</em>, where
+        <em>p<sub>k</sub>(t)</em> is the target position and
+        <em>v<sub>k</sub>(t)</em> is the target velocity. Sensors have identical
+        capabilities: detection radius <em>r<sub>d</sub></em>, maximum velocity
+        <em>v<sub>s</sub></em> and communication range
+        <em>r<sub>c</sub></em>. Target detection occurs when
+        <em>||s<sub>i</sub>(t) - p<sub>k</sub>(t)|| ≤ r<sub>d</sub></em>. Upon
+        detection, sensor <em>i</em> obtains a noisy position measurement of target
+        <em>k</em>,
+        <em>z<sub>ik</sub>(t) = p<sub>k</sub>(t) + n(t)</em> where
+        <em>n(t)</em> is zero-mean measurement noise with covariance <em>R</em>.
+      </p>
+      <p>
+        In the underlying DES framework, proactive handover is triggered when an active
+        tracker predicts that its target may soon be lost. The tracker then broadcasts
+        a handover request to available candidate sensors. The candidate sensors
+        participate in a bidding process, in which each candidate computes a bid metric
+        representing its suitability for the handover task. The selected candidates are
+        assigned as interceptors and are dispatched toward the predicted interception
+        region to support tracking continuity before target loss occurs. Sensors
+        assigned to execute such a handover request are referred to as interceptors in
+        the remainder of this report.
+      </p>
+      <p>
+        Throughout the report, calling targets are targets that initiate a handover
+        request and enter the interceptor assignment process. Candidate sensors are
+        eligible sensors that may bid for those targets, while active trackers are the
+        sensors currently responsible for direct target tracking and are excluded from
+        interceptor bidding during the event. An assignment event consists of the
+        broadcast, bidding, and selection stages initiated by one or more handover
+        requests.
+      </p>
+      <p>
+        The system assumptions used in the remainder of the report are as follows: the
+        workspace is planar, sensors are homogeneous, assignments are event-triggered,
+        and each sensor can serve at most one target at a time within the current
+        assignment event. Because different targets may enter the assignment process at
+        different times, a later handover request may compete with sensors that have
+        already been committed to another target. The proposed method addresses this
+        case by expanding the affected-target set before solving the assignment
+        problem.
+      </p>
+
+      <h3>3.2 Problem Formulation and Bidding Cost Function</h3>
+      <p>
+        When one or more targets issue handover requests, the system defines a set of
+        affected targets and a set of candidate sensors. The affected-target set
+        includes the current calling targets and any previously served targets whose
+        committed interceptors may be reassigned due to the current conflict-resolution
+        event.
+      </p>
+      <p>
+        For each calling target, one of its active trackers first predicts an
+        interception point based on the current EKF target estimate and the predicted
+        tracker-loss point. This information is then broadcast to the network. Each
+        eligible candidate sensor evaluates a bidding cost for that target. A lower bid
+        indicates that the sensor is a more suitable interceptor candidate.
+      </p>
+      <p>
+        Following the formulation in [1], the bidding cost is defined as:
+      </p>
+      <div class="equation">c(i,k) = w₁ P_home(i) + w₂ P_spatial(i,k) + w₃ P_temporal(i,k) + w₄ P_uncertainty(i,k)</div>
+      <ul class="symbol-list">
+        <li><em>P<sub>home</sub>(i)</em> penalizes the displacement of a sensor from its home location.</li>
+        <li><em>P<sub>spatial</sub>(i,k)</em> penalizes the distance from the sensor to the target intercept point.</li>
+        <li><em>P<sub>temporal</sub>(i,k)</em> penalizes poor arrival timing relative to the target motion.</li>
+        <li><em>P<sub>uncertainty</sub>(i,k)</em> penalizes low shared confidence in the target estimate.</li>
+      </ul>
+      <p>
+        Let <em>x(i,k)</em> indicate whether sensor <em>i</em> is assigned to target
+        <em>k</em>, then we can have:
+      </p>
+      <div class="equation">x(i,k) = { 1, if sensor i is assigned to target k
+           { 0, otherwise</div>
+      <p>
+        Let <em>N<sub>c</sub></em> denote the set of candidate sensors and
+        <em>K<sub>a</sub></em> denote the set of affected targets. First, the revised
+        formulation maximizes the total number of interceptor slots filled across the
+        affected targets:
+      </p>
+      <div class="equation">max  ∑_(k ∈ K_a) ∑_(i ∈ N_c) x(i,k)</div>
+      <p>
+        Then, among all assignments that achieve this maximum value, it minimizes the
+        total assignment cost:
+      </p>
+      <div class="equation">min  ∑_(k ∈ K_a) ∑_(i ∈ N_c) c(i,k)x(i,k)</div>
+      <p>
+        The assignment is subject to the following constraints:
+      </p>
+      <div class="equation">∑_(k ∈ K_a) x(i,k) ≤ 1,   ∀ i ∈ N_c
+∑_(i ∈ N_c) x(i,k) ≤ m,   ∀ k ∈ K_a
+x(i,k) ∈ {0,1},   ∀ i ∈ N_c, ∀ k ∈ K_a</div>
+      <p>
+        The first constraint ensures that each candidate sensor can be assigned to at
+        most one target in the current assignment event. The second constraint ensures
+        that each affected target receives no more than its allowed number of
+        interceptors, where <em>m</em> is the maximum number of interceptors per
+        target.
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Methodology</h2>
+
+      <h3>4.1 Conflict Detection</h3>
+      <p>
+        The interceptor assignment workflow is activated when a tracker predicts that a
+        target may soon be lost and initiates a handover request. The requesting target
+        then passes through the broadcast, bidding, and selection stages while seeking
+        new interceptors. Within this event-driven DES process, a conflict is detected
+        when multiple handover requests compete for one or more of the same candidate
+        sensors, either because their assignment intervals overlap or because a later
+        handover request attempts to use a sensor already committed to another target.
+      </p>
+      <p>
+        In practice, the conflict is identified at the event level by checking whether
+        the same candidate sensor appears in more than one active request set, or
+        whether a new request attempts to employ a sensor that has already broadcast a
+        commitment to another target. The purpose of the methodology is therefore not
+        to redefine the underlying handover pipeline, but to specify how the system
+        responds once such a conflict has been detected.
+      </p>
+
+      <h3>4.2 Affected-Target Expansion</h3>
+      <p>
+        In the previous MinMax-based method, conflict resolution was applied only to the
+        targets directly involved in the current conflict-resolution step. In the
+        revised method, the affected-target set is expanded whenever a later handover
+        request attempts to take over a sensor already committed to another target. In
+        that case, the previously served target is added to the affected-target set for
+        the current event.
+      </p>
+      <p>
+        This expansion step defines the conflict-aware part of the revised method. The
+        target that loses a committed interceptor is not treated as an external side
+        effect of the new request; instead, it is explicitly brought back into the same
+        assignment scope. As a result, both the current calling targets and any
+        displaced previously served targets are reconsidered jointly within one event.
+      </p>
+
+      <h3>4.3 Lexicographic Optimal Assignment</h3>
+      <p>
+        Once the affected-target set and eligible candidate-sensor set have been
+        determined, the revised method solves one joint sensor-to-target assignment for
+        the entire event. In this report, <em>optimal</em> does not refer to a
+        system-wide optimum over the full WSN operation. Instead, it refers to the best
+        feasible assignment with respect to the event-level objective defined over the
+        current affected-target set and eligible candidate-sensor set.
+      </p>
+      <p>
+        The assignment objective is lexicographic. First, the method maximizes the
+        number of assigned interceptor slots across the affected targets. Second, among
+        all assignments that achieve this maximum number of filled slots, it minimizes
+        the total assignment cost. Under this definition, the assignment is optimal for
+        the current event because it satisfies the largest possible number of
+        interceptor demands first and then selects the minimum-cost solution among those
+        maximally feasible assignments.
+      </p>
+
+      <h3>4.4 MinMax Versus the Revised Objective</h3>
+      <p>
+        The difference between the previous MinMax-based method and the revised
+        objective lies in the performance criterion used to resolve a conflict. The
+        MinMax method attempts to minimize the worst team cost among the targets
+        included in the same resolution step. Its emphasis is therefore on fairness
+        across the involved targets, so that no target receives an excessively poor
+        interceptor configuration if a more balanced alternative exists.
+      </p>
+      <p>
+        The revised objective emphasizes a different priority. It first seeks to fill as
+        many interceptor slots as possible across the affected targets and then reduces
+        the total assignment cost. As a result, the revised method may accept uneven
+        target-level costs if doing so allows more interceptor demands to be satisfied
+        or lowers the overall event-level assignment burden. The trade-off is therefore
+        between fairness in the worst-case team cost and efficiency in event-level
+        coverage and total assignment cost.
+      </p>
+
+      <h3>4.5 Distributed Feasibility and Communication Assumptions</h3>
+      <p>
+        Although the revised method changes the assignment rule, it does not introduce a
+        permanent coordinator or centralized bid computation. Candidate sensors still
+        compute their own bid values locally, and the request and bidding information is
+        disseminated through the original DES communication process. Under ideal
+        communication assumptions in simulation, participating sensors receive the same
+        event information, reconstruct the same assignment instance, and apply the same
+        deterministic decision rule.
+      </p>
+      <p>
+        Under these assumptions, the revised method retains the distributed execution
+        logic of the original DES framework while changing the way assignment conflicts
+        are resolved. In a physical platform, however, practical feasibility would
+        depend on whether the communication network can support timely request
+        propagation, bid exchange, assignment reconstruction, and commitment
+        confirmation within the DES selection window. These communication implications
+        are discussed later in the report.
+      </p>
+    </section>
+  </main>
+</body>
+</html>
