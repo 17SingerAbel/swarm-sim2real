@@ -1,0 +1,39 @@
+Yeqi (Abel) Sang
+Email: abel.sang@mail.utoronto.ca | Phone: (+1) 647-937-7099 | Toronto, ON
+Professional Summary
+Data Scientist with 5 years of experience across software engineering, cloud infrastructure, and applied analytics. Currently supporting AML client risk model benchmarking and model performance improvement initiatives, with graduate project experience in state estimation, optimization, and simulation-based validation.
+Core Qualifications
+5 years of experience spanning data science, software engineering, and cloud-based systems.
+Hands-on experience with model benchmarking, performance analysis, and structured problem solving in analytics-driven environments.
+Strong technical foundation in Python, SQL, MATLAB, Node.js, and cloud tooling including AWS, Docker, and CI/CD pipelines.
+Graduate project experience in state estimation, optimization, simulation, and algorithm validation.
+Effective cross-functional collaborator with experience partnering with stakeholders and supporting shared VM and server environments.
+Work Experience
+Data Scientist, Scotiabank, Toronto, Canada                                                                                                   [Start Date] - Present
+Built benchmarking analyses for AML client risk models to evaluate current-model performance, compare approaches, and identify opportunities for improvement.
+Partnered with business and technical stakeholders to gather requirements, communicate findings, and support model enhancement initiatives in the Anti-Money Laundering domain.
+Managed team virtual machines and server environments to maintain reliable infrastructure for analytics and development workflows.
+DevOps Engineer, Allied Technical Software Inc., Toronto, Canada                                                                         2022.11 - 2025.2
+Integrated Snowflake-based LLM and AI pipelines that routed applications to different models by user role, improving scalability and data efficiency.
+Maintained and modernized legacy systems inherited through acquisition, preserving system stability and operational continuity.
+Automated lower-environment hibernation workflows to reduce cloud infrastructure costs while maintaining development availability.
+Managed end-to-end CI/CD pipelines, virtual machines, and dynamic proxy provisioning to improve deployment reliability and support operational needs.
+Software Engineer, Orbiseed Technology Inc, Toronto, Canada                                                                              2019.09 - 2022.10
+Collaborated with algorithm engineers to develop and productionize a Python and OpenCV pipeline for generating 3D building models from 2D inputs with fewer corner cases.
+Built a web-based 3D viewer demo with Three.js and WebGL in one month to showcase Building Information System outputs and support investor-facing presentations.
+Led Lunch-and-Learn sessions to share new technologies and practical engineering learnings across teams.
+Education
+Master of Engineering, University of Toronto, Canada                                                                                                  2023.09 - Present
+Department: Mechanical & Industrial Engineering
+Relevant Coursework: Cloud-Based Data Analytics, AI Applications in Robotics, Perception for Robotics, State Estimation
+Bachelor of Science, University of Toronto, Canada                                                                                                      2015.09 - 2019.06
+Specialist in Computer Science & Minor in Statistics
+Main Course: Computer Graphics, Computer Vision, Machine Learning
+Projects & Research
+Master of Engineering Project - Cooperative Multi-Target Tracking in Mobile Wireless Sensor Networks, University of Toronto                     2025
+Developed a MATLAB simulation for cooperative multi-target tracking in a mobile wireless sensor network, coordinating 25 sensor nodes to track up to 3 moving targets.
+Implemented per-sensor Extended Kalman Filter state estimation and proactive handover logic to predict target loss and dispatch interceptors before tracking failure.
+Designed and validated conflict-resolution algorithms for simultaneous handover events, including global assignment logic and simulation-based A/B testing against legacy strategies.
+Research Assistant at DGP Lab, University of Toronto                                                                                               2022.10 - 2024.9
+Contributed to the CHI 2025-accepted paper "VibraForge: A Scalable Prototyping Toolkit for Creating Spatialized Vibrotactile Feedback Systems."
+Developed a VR testing environment and a coordinate-mapping framework to align virtual and real-world tracking systems for evaluation.
