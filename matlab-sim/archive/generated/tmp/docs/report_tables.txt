@@ -1,0 +1,21 @@
+TABLE 0
+  ROW 0: ['Candidate Sensor', 'Bidding cost for Target 2', 'Bidding Cost for Target 1']
+  ROW 1: ['S10', '0.377', '0.300']
+  ROW 2: ['S13', '0.306', '0.304']
+  ROW 3: ['S14', '0.219', '0.193']
+  ROW 4: ['S18', '0.327', '0.397']
+  ROW 5: ['S20', '0.285', '0.377']
+
+TABLE 1
+  ROW 0: ['Algorithm', 'Target 2', 'Target 2 Cost', 'Target 1', 'Target 1 Cost', 'Total', 'Worst Team Cost']
+  ROW 1: ['Greedy [T2, T1]', 'S14, S20', '0.504', 'S10, S13', '0.604', '1.108', '0.604']
+  ROW 2: ['MinMax', 'S13, S20', '0.591', 'S14, S18', '0.590', '1.182', '0.591']
+  ROW 3: ['Global', 'S13, S20', '0.591', 'S10, S14', '0.493', '1.085', '0.591']
+
+TABLE 2
+  ROW 0: ['Method', 'Target', 'Selected Sensors', 'Individual Costs', 'Target Total Cost', 'Total Cost']
+  ROW 1: ['MinMax', 'Target 1', 'S14, S18', '0.193, 0.397', '0.590', '1.181']
+  ROW 2: ['MinMax', 'Target 2', 'S13, S20', '0.306, 0.285', '0.591', '1.181']
+  ROW 3: ['MCMF', 'Target 1', 'S10, S14', '0.300, 0.193', '0.493', '1.084']
+  ROW 4: ['MCMF', 'Target 2', 'S13, S20', '0.306, 0.285', '0.591', '1.084']
+
