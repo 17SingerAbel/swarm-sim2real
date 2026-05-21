@@ -1,4 +1,6 @@
 *.mat
 *.log
-*/*.mat
-*/*.log
+*.asv
+slprj/
+matlab-sim/generated/
+matlab-sim/archive/generated/
