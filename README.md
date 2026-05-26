@@ -166,4 +166,4 @@ Helper modules and their ROS 2 equivalents:
 
 ## Author
 
-Yeqi Sang — [yaki.robotics@gmail.com](mailto:yaki.robotics@gmail.com)
+Yeqi Sang — [yeqisang@gmail.com](mailto:yeqisang@gmail.com)

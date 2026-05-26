@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'target_simulator'
+package_name = 'sensor_agent'
 
 setup(
     name=package_name,
@@ -15,11 +15,11 @@ setup(
     zip_safe=True,
     maintainer='Abel Sang',
     maintainer_email='yeqisang@gmail.com',
-    description='Publishes simulated target ground-truth positions',
+    description='Sensor FSM agent for WSN tracking',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'target_simulator_node = target_simulator.target_simulator_node:main',
+            'sensor_agent_node = sensor_agent.sensor_agent_node:main',
         ],
     },
 )
