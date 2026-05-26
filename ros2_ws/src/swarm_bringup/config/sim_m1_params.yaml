@@ -1,0 +1,12 @@
+target_simulator:
+  ros__parameters:
+    num_targets: 3
+    dt: 0.1
+
+sensor_agent_0:
+  ros__parameters:
+    sensor_id: 0
+    pos_x: 0.0
+    pos_y: 0.0
+    detection_radius: 1.5
+    num_targets: 3

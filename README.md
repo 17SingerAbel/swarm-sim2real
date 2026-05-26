@@ -62,7 +62,7 @@ Full architecture decisions, ROS graph, message definitions, and Gazebo integrat
 
 | # | Description | Status |
 |---|---|---|
-| M1 | Minimal graph: target simulator + sensor FSM, visible in `ros2 topic echo` | 🔨 In progress |
+| M1 | Minimal graph: target simulator + sensor FSM, visible in `ros2 topic echo` | ✅ Done |
 | M2 | All 25 sensors on hex grid, launched from YAML config | ⏳ Planned |
 | M3 | Per-sensor EKF with noisy measurements, estimate topics | ⏳ Planned |
 | M4 | Distributed handover: request → bidding window → local assignment reconstruction | ⏳ Planned |
@@ -116,16 +116,43 @@ ros2 launch swarm_bringup sim_m1.launch.py
 **Verify in a second terminal:**
 ```bash
 # See target ground truth
-ros2 topic echo /targets/0/ground_truth
+ros2 topic echo /targets/target_0/ground_truth
 
 # See sensor FSM state transitions
-ros2 topic echo /sensors/0/state
+ros2 topic echo /sensors/sensor_0/state
 
 # See the full node graph
 rqt_graph
 ```
 
-Expected: sensor FSM transitions `IDLE → DETECTING → TRACKING` as a target enters its detection radius, and back to `IDLE` when the target leaves.
+Expected: sensor FSM transitions `IDLE → DETECTING → TRACKING` as target_0 enters sensor_0's detection radius (r_d = 1.5 units), then back to `IDLE` when the target passes through. With default config, target_0 enters range at ≈ t=3.5 s and exits at ≈ t=6.5 s.
+
+### M1 Implementation Notes
+
+**Packages built:**
+
+| Package | Build type | Role |
+|---|---|---|
+| `swarm_interfaces` | ament_cmake | Custom message definitions (TargetState, SensorState) |
+| `target_simulator` | ament_python | Publishes 3 targets with linear motion at 10 Hz |
+| `sensor_agent` | ament_python | 3-state FSM (IDLE / DETECTING / TRACKING), distance-gated |
+| `swarm_bringup` | ament_python | Launch file + YAML parameter config |
+
+**Key design decisions in M1:**
+- Topic names use string prefixes to avoid the ROS 2 rule against numeric topic segments: `/targets/target_0/ground_truth`, not `/targets/0/ground_truth`
+- FSM is **timer-driven** (10 Hz tick), not callback-driven. Target callbacks only store the latest position; the FSM step checks distance and transitions once per tick.
+- DETECTING → TRACKING is immediate in M1 (one tick). EKF convergence will gate this transition in M3.
+- `swarm_interfaces` must be built **before** other packages because Python nodes import its generated message types.
+- Launch files and YAML configs must be declared in `setup.py` `data_files` to be installed into the share directory where `get_package_share_directory()` can find them.
+
+**ROS 2 concepts practiced:**
+- `ament_cmake` vs `ament_python` build types and when to use each
+- Publisher / subscriber pattern with custom message types
+- Timer-driven node loops with `create_timer()`
+- Node parameters declared with `declare_parameter()` and loaded from YAML
+- `entry_points` in `setup.py` as the mechanism that makes `ros2 run` work
+- `colcon build --packages-select` for incremental builds
+- `source install/setup.bash` requirement after every build
 
 ---
 
