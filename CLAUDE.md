@@ -193,24 +193,28 @@ For MATLAB work:
 - avoid mixing refactors with logic changes when possible
 
 ## ROS Porting Guidance
-The planned initial ROS architecture is centralized rather than fully distributed.
+The authoritative architecture reference is `ros2-design.md` in the project root.
+Always read it at the start of any ROS 2 session before writing code.
+
+The ROS architecture is fully distributed (DES-based). There is no central coordinator.
+This was confirmed by reading the paper (Section 4.4) — see `ros2-design.md` Section 2 for the full rationale.
 
 Expected responsibilities:
 
-- estimator node
-- handover/assignment coordinator node
-- Crazyflie command adapter node
+- EKF estimation: lives inside each `sensor_agent` node (per-sensor, per-target)
+- assignment logic: lives inside each `sensor_agent` node (distributed bidding + local reconstruction)
+- Crazyflie command adapter: `swarm_cf_adapter` package (M7), separate from algorithm logic
 - logging and replay pipeline
 
-Claude should not assume Gazebo is the first simulator unless the user explicitly chooses that route. Crazyswarm2-based simulation remains the default first step.
+Do not create a central `assignment_manager` node. It contradicts the DES architecture.
+
+Claude should not assume Gazebo is the first simulator unless the user explicitly chooses that route. Crazyswarm2 SITL simulation is the default first step before real hardware.
 
 ## Hardware Guidance
-Unless the user says otherwise:
 
-- assume Crazyflie simulation comes before real flight
+- user has explicitly chosen Crazyflie 2.0 as the target hardware
+- assume Crazyswarm2 SITL simulation comes before real flight
 - assume safety and localization are first-class constraints
-- note that Crazyflie 2.0 is not the preferred default for a new setup
-- prefer Crazyflie 2.1+ if hardware choice is still open
 
 ## Response Style for Claude
 Claude should respond in a way that supports learning:

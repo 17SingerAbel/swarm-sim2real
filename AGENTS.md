@@ -175,15 +175,16 @@ Expected behavior:
 - `.log` and `.mat` outputs are written under `matlab-sim/generated/logs/`
 
 ## Current Development Stage
-This repository is still MATLAB-first.
+The MATLAB simulation is complete and serves as the algorithmic baseline.
+ROS 2 implementation has begun: architecture is fully designed, M1 is in progress.
 
 Current priorities:
 
-1. keep the MATLAB baseline organized and runnable
-2. preserve behavior while extracting cleaner module boundaries
-3. prepare the logic for later ROS 2 porting
+1. keep the MATLAB baseline organized and runnable as regression ground truth
+2. implement ROS 2 milestones in order (M1 → M2 → ... → M9)
+3. validate each milestone against MATLAB behavior before advancing
 
-The ROS 2 implementation itself has not started in this repository yet. The current roadmap lives in `plan.md`.
+The full ROS 2 architecture is documented in `ros2-design.md`. The milestone roadmap lives in `plan.md`.
 
 ## Agent Working Rules
 These rules apply to any coding agent working in this repository.
@@ -235,17 +236,18 @@ The intended future stack is:
 
 Recommended porting strategy:
 
-- start with a centralized coordinator architecture
-- validate in simulation before hardware
+- architecture is fully distributed DES — no central coordinator node
+- each sensor_agent node owns its FSM, EKF, and assignment logic
+- validate in Crazyswarm2 SITL simulation before real hardware
 - preserve MATLAB behavior first, optimize later
 
 Hardware note:
 
-- Crazyflie 2.0 is not the preferred default for a new setup
-- Crazyflie 2.1+ is the safer default unless hardware constraints require 2.0
+- user has explicitly chosen Crazyflie 2.0 as the target hardware
 
 ## Related Documents
-- `plan.md` for the ROS 2 sim-to-real roadmap
-- `matlab-sim/docs/design.md` for system design notes
-- `matlab-sim/docs/debug_interception_analysis.md` for bug and logic analysis
-- `CLAUDE.md` for any Claude-specific repository guidance
+- `ros2-design.md` — authoritative ROS 2 architecture reference (read this first for any ROS 2 session)
+- `plan.md` — ROS 2 sim-to-real roadmap and porting strategy
+- `CLAUDE.md` — Claude-specific repository guidance
+- `matlab-sim/docs/design.md` — MATLAB system design notes
+- `matlab-sim/docs/debug_interception_analysis.md` — bug and logic analysis
