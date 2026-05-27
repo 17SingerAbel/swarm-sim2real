@@ -268,8 +268,8 @@ builtin_interfaces/Time stamp
 
 | Milestone | Goal | New Components | Done When |
 |---|---|---|---|
-| **M1** | Minimal running graph: 1 sensor, 3 targets, FSM transitions visible | `swarm_interfaces` (TargetState, SensorState), `target_simulator` (linear motion), `sensor_agent` (3-state FSM), `swarm_bringup` (launch + YAML) | `ros2 topic echo /sensors/0/state` shows FSM transitions as target enters/leaves range |
-| **M2** | All 25 sensors on hex grid, launched from YAML config | YAML grid config, parameterized sensor launch, hex grid position generator | `ros2 node list` shows 25 sensor_agent nodes; each has correct home position |
+| **M1** ✅ | Minimal running graph: 1 sensor, 3 targets, FSM transitions visible | `swarm_interfaces` (TargetState, SensorState), `target_simulator` (linear motion), `sensor_agent` (3-state FSM), `swarm_bringup` (launch + YAML) | `ros2 topic echo /sensors/0/state` shows FSM transitions as target enters/leaves range |
+| **M2** ✅ | All 25 sensors on hex grid, launched from YAML config | `sim_m2_params.yaml` (grid config), `sim_m2.launch.py` (dynamic Node() generation, hex grid computation in Python) | `ros2 node list` shows 26 nodes (target_simulator + 25 sensor_agent); each has correct home position from `ros2 param get` |
 | **M3** | Per-sensor EKF, noisy measurements, estimate topics | `TargetEstimate` msg, EKF class inside sensor_agent | EKF estimates converge toward ground truth; ekf_converged flag transitions correctly |
 | **M4** | Distributed handover: request → bidding → reconstruction → self-assignment | `HandoverRequest`, `BidMsg`, `CommitmentMsg` msgs, bidding window timer in sensor_agent | One-target handover event fires, 2 sensors self-assign as interceptors matching expected bid order |
 | **M5** | Multi-target conflict resolution (expanded joint assignment scope) | Two-stage LP solver inside sensor_agent, scope expansion logic | Two-target conflict reproduces Section 5.3 result from paper: committed interceptor is not stolen |

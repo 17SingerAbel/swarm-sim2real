@@ -63,7 +63,7 @@ Full architecture decisions, ROS graph, message definitions, and Gazebo integrat
 | # | Description | Status |
 |---|---|---|
 | M1 | Minimal graph: target simulator + sensor FSM, visible in `ros2 topic echo` | ✅ Done |
-| M2 | All 25 sensors on hex grid, launched from YAML config | ⏳ Planned |
+| M2 | All 25 sensors on hex grid, launched from YAML config | ✅ Done |
 | M3 | Per-sensor EKF with noisy measurements, estimate topics | ⏳ Planned |
 | M4 | Distributed handover: request → bidding window → local assignment reconstruction | ⏳ Planned |
 | M5 | Multi-target conflict resolution via expanded joint assignment scope | ⏳ Planned |
@@ -91,6 +91,65 @@ swarm-sim2real/
   ros2-design.md            # full architecture reference document
   plan.md                   # ROS 2 porting roadmap
 ```
+
+---
+
+## Running Milestone 2
+
+**Prerequisites:** M1 built and sourced (see M1 section below).
+
+```bash
+cd ros2_ws
+
+# Rebuild swarm_bringup to pick up the new launch + config files
+colcon build --packages-select swarm_bringup
+source install/setup.bash
+
+# Launch all 25 sensors
+ros2 launch swarm_bringup sim_m2.launch.py
+```
+
+**Verify in a second terminal:**
+```bash
+# Should show 26 nodes: /target_simulator + /sensor_agent_0 … /sensor_agent_24
+ros2 node list | sort | wc -l
+
+# Spot-check that sensor 5 (first odd-column sensor) has the correct y offset
+ros2 param get /sensor_agent_5 pos_x   # → 12.0
+ros2 param get /sensor_agent_5 pos_y   # → 6.0  (= node_spacing / 2)
+```
+
+Expected: `ros2 node list` shows exactly 26 running nodes. Sensor IDs follow the convention `col * 5 + row` (0-indexed), matching the MATLAB grid numbering.
+
+### M2 Implementation Notes
+
+**What changed from M1:**
+
+| File | Role |
+|---|---|
+| `swarm_bringup/config/sim_m2_params.yaml` | Defines `swarm.node_spacing`, `grid_size`, and shared defaults. The `swarm:` block is read by the launch Python; it is not a ROS parameter namespace. |
+| `swarm_bringup/launch/sim_m2.launch.py` | Reads `node_spacing` and `grid_size` from YAML, computes 25 hex grid positions in Python, and generates 25 `Node()` declarations dynamically. |
+| `swarm_bringup/setup.py` | `data_files` updated to install both new files into the package share directory. |
+
+**Key design decisions in M2:**
+- `node_spacing` lives in YAML (user-visible config); position arithmetic lives in the launch Python. Changing `node_spacing` in one place regenerates all 25 positions automatically.
+- The `swarm:` YAML block is a custom config section, not a `ros__parameters` namespace. The launch Python reads it with `yaml.safe_load()` before any nodes are created.
+- Parameters are passed as inline Python dicts (not a file path) because each node's `pos_x`/`pos_y` values are different — they cannot be expressed statically in a shared YAML file.
+- `communication_range` is stored in the YAML for reference but not passed to `sensor_agent` nodes yet — the node does not declare that parameter until M4.
+
+**Hex grid geometry:**
+```
+dy = node_spacing × √3 / 2  ≈ 10.39 units
+even columns: y = row × dy
+odd  columns: y = row × dy + node_spacing / 2   (+ 6.0 units offset)
+sensor_id = col × 5 + row   (matches MATLAB node numbering)
+```
+
+**ROS 2 concepts practiced:**
+- Reading a YAML config file in a launch script with `yaml.safe_load()` before node creation
+- Dynamic `Node()` generation with a Python loop — equivalent to a parameterized node factory
+- Passing per-node parameters as inline dicts vs. a shared YAML file path, and when each is appropriate
+- `data_files` in `setup.py`: why both launch files and config files must be listed explicitly
 
 ---
 
