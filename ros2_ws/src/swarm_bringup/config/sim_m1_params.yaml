@@ -10,3 +10,4 @@ sensor_agent_0:
     pos_y: 0.0
     detection_radius: 1.5
     num_targets: 3
+    dt: 0.1

@@ -13,12 +13,14 @@ class SensorAgentNode(Node):
         self.declare_parameter('pos_y', 0.0)
         self.declare_parameter('detection_radius', 1.5)
         self.declare_parameter('num_targets', 3)
+        self.declare_parameter('dt', 0.1)
 
         self.sensor_id = self.get_parameter('sensor_id').value
         self.pos_x = self.get_parameter('pos_x').value
         self.pos_y = self.get_parameter('pos_y').value
         self.r_d = self.get_parameter('detection_radius').value
         self.num_targets = self.get_parameter('num_targets').value
+        self.dt = self.get_parameter('dt').value
 
         self.fsm_state = 'IDLE'
         self.role = 'NONE'
@@ -39,7 +41,7 @@ class SensorAgentNode(Node):
             10,
         )
 
-        self.create_timer(0.1, self._fsm_step)
+        self.create_timer(self.dt, self._fsm_step)
         self.get_logger().info(
             f'sensor_agent {self.sensor_id} ready at '
             f'({self.pos_x}, {self.pos_y}), r_d={self.r_d}'
