@@ -13,10 +13,12 @@ setup(
         ('share/' + package_name + '/launch', [
             'launch/sim_m1.launch.py',
             'launch/sim_m2.launch.py',
+            'launch/sim_m3.launch.py',
         ]),
         ('share/' + package_name + '/config', [
             'config/sim_m1_params.yaml',
             'config/sim_m2_params.yaml',
+            'config/sim_m3_params.yaml',
         ]),
     ],
     install_requires=['setuptools'],

@@ -8,6 +8,7 @@ find_package(builtin_interfaces REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetState.msg"
   "msg/SensorState.msg"
+  "msg/TargetEstimate.msg"
   DEPENDENCIES builtin_interfaces
 )
 
