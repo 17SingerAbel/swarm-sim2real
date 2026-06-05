@@ -40,6 +40,9 @@ def generate_launch_description():
     ekf_r_std = float(swarm['ekf_r_std'])
     ekf_q_std = float(swarm['ekf_q_std'])
     ekf_thresh = float(swarm['ekf_convergence_threshold'])
+    sensor_max_speed = float(swarm['sensor_max_speed'])
+
+    tgt = cfg['targets']
 
     nodes = [
         Node(
@@ -49,6 +52,10 @@ def generate_launch_description():
             parameters=[{
                 'num_targets': num_targets,
                 'dt': dt,
+                'init_x':  [float(v) for v in tgt['init_x']],
+                'init_y':  [float(v) for v in tgt['init_y']],
+                'init_vx': [float(v) for v in tgt['init_vx']],
+                'init_vy': [float(v) for v in tgt['init_vy']],
             }],
             output='screen',
         ),
@@ -70,6 +77,7 @@ def generate_launch_description():
                 'ekf_r_std': ekf_r_std,
                 'ekf_q_std': ekf_q_std,
                 'ekf_convergence_threshold': ekf_thresh,
+                'sensor_max_speed': sensor_max_speed,
             }],
             output='screen',
         ))

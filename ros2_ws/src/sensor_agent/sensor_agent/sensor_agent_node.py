@@ -22,11 +22,15 @@ class SensorAgentNode(Node):
         self.declare_parameter('ekf_r_std', 0.3)          # measurement noise std dev
         self.declare_parameter('ekf_q_std', 0.5)          # process noise std dev
         self.declare_parameter('ekf_convergence_threshold', 0.006)
+        self.declare_parameter('sensor_max_speed', 0.8)   # units/s
 
         self.sensor_id = self.get_parameter('sensor_id').value
         self.pos_x = self.get_parameter('pos_x').value
         self.pos_y = self.get_parameter('pos_y').value
+        self.home_x = self.pos_x   # home position never changes
+        self.home_y = self.pos_y
         self.r_d = self.get_parameter('detection_radius').value
+        self.max_speed = self.get_parameter('sensor_max_speed').value
         self.num_targets = self.get_parameter('num_targets').value
         self.dt = self.get_parameter('dt').value
         r_std = self.get_parameter('ekf_r_std').value
@@ -95,6 +99,17 @@ class SensorAgentNode(Node):
         r_std, q_std, thresh = self._ekf_params
         return TargetEKF(self.dt, r_std, q_std, thresh)
 
+    def _move_toward(self, goal_x, goal_y):
+        """Move sensor one dt step toward goal, capped at max_speed."""
+        dx = goal_x - self.pos_x
+        dy = goal_y - self.pos_y
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist < 1e-6:
+            return
+        step = min(self.max_speed * self.dt, dist)
+        self.pos_x += (dx / dist) * step
+        self.pos_y += (dy / dist) * step
+
     def _noisy_measurement(self, true_x, true_y):
         """Add Gaussian noise to a ground-truth position (simulates sensor hardware)."""
         noise = self._rng.normal(0.0, self._r_std, size=2)
@@ -152,6 +167,14 @@ class SensorAgentNode(Node):
                 self.fsm_state = 'IDLE'
                 self.assigned_target_id = -1
                 self.get_logger().info('TRACKING → IDLE  (target left range)')
+
+        # --- Move sensor ---
+        if self.fsm_state == 'TRACKING' and self.assigned_target_id in self.ekfs:
+            ekf = self.ekfs[self.assigned_target_id]
+            if ekf.initialized:
+                self._move_toward(ekf.x[0], ekf.x[1])
+        else:
+            self._move_toward(self.home_x, self.home_y)
 
         # --- Publish ---
         self._publish_state()

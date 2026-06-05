@@ -39,13 +39,17 @@ class TargetEKF:
         # Measurement noise covariance
         self.R = np.diag([r_std ** 2, r_std ** 2])
 
-        # Process noise covariance (diagonal approximation)
-        self.Q = np.diag([
-            (q_std * dt) ** 2,   # px
-            (q_std * dt) ** 2,   # py
-            q_std ** 2,          # vx
-            q_std ** 2,          # vy
+        # Process noise covariance — DWNA model (matches MATLAB: Q_k = G * Q * G')
+        # G maps 2D acceleration noise into the 4D [px,py,vx,vy] state space.
+        # This produces the correct position-velocity cross-correlation terms.
+        G = np.array([
+            [dt ** 2 / 2, 0.0],
+            [0.0, dt ** 2 / 2],
+            [dt,  0.0],
+            [0.0, dt],
         ])
+        Q2 = q_std ** 2 * np.eye(2)
+        self.Q = G @ Q2 @ G.T
 
         self.x = None          # state [px, py, vx, vy]
         self.P = None          # 4x4 covariance
@@ -55,8 +59,7 @@ class TargetEKF:
     def initialize(self, meas_x: float, meas_y: float):
         """Bootstrap the filter from the first position measurement."""
         self.x = np.array([meas_x, meas_y, 0.0, 0.0])
-        # High initial velocity uncertainty; position seeded from measurement
-        self.P = np.diag([self.R[0, 0], self.R[1, 1], 100.0, 100.0])
+        self.P = np.eye(4)   # matches MATLAB: sensor_P_matrices{i,t} = eye(4)
         self.initialized = True
         self.converged = False
 
@@ -66,6 +69,7 @@ class TargetEKF:
             return
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
+        self._check_convergence()
 
     def update(self, meas_x: float, meas_y: float):
         """Kalman update with a new position measurement."""
@@ -80,11 +84,10 @@ class TargetEKF:
         self._check_convergence()
 
     def _check_convergence(self):
-        if not self.converged:
-            self.converged = (
-                self.P[2, 2] < self.threshold
-                and self.P[3, 3] < self.threshold
-            )
+        self.converged = bool(
+            self.P[2, 2] < self.threshold
+            and self.P[3, 3] < self.threshold
+        )
 
     @property
     def covariance_diag(self):
