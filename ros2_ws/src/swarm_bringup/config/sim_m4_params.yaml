@@ -1,0 +1,28 @@
+# sim_m4_params.yaml
+# Extends M3 params with M4 handover/bidding protocol parameters.
+
+swarm:
+  grid_size: 5
+  node_spacing: 12.0        # units; = 8 x detection_radius (paper §3.1)
+  detection_radius: 1.5     # r_d
+  communication_range: 18.0 # r_c — software-gated in simulation
+  num_targets: 3
+  dt: 0.1
+
+  # EKF parameters (same as M3)
+  ekf_r_std: 0.05
+  ekf_q_std: 0.1
+  ekf_convergence_threshold: 0.006
+  sensor_max_speed: 0.8
+
+  # M4 handover/bidding protocol
+  bidding_window: 0.5        # Δt_bid seconds — window to collect bids before assignment
+  max_interceptors: 2        # m — max interceptors per target (paper §3.1)
+  handover_lookahead: 2.0    # seconds ahead to predict loss and fire request
+
+targets:
+  speeds: [1.0, 1.1, 1.2]
+  start_times: [0.0, 4.0, 6.5]
+  waypoints_0: [0.0,-0.308, 10.0,-0.308, 25.0,3.692, 36.0,9.692, 48.0,22.692, 55.0,32.692, 70.0,44.692]
+  waypoints_1: [0.0,41.56, 10.0,41.56, 25.0,37.56, 36.0,31.56, 48.0,18.56, 55.0,8.56, 70.0,-3.4]
+  waypoints_2: [0.0,9.692, 10.0,9.692, 25.0,13.692, 36.0,19.692, 48.0,32.692, 55.0,42.692, 70.0,54.692]

@@ -9,6 +9,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetState.msg"
   "msg/SensorState.msg"
   "msg/TargetEstimate.msg"
+  "msg/HandoverRequest.msg"
+  "msg/BidMsg.msg"
+  "msg/CommitmentMsg.msg"
   DEPENDENCIES builtin_interfaces
 )
 

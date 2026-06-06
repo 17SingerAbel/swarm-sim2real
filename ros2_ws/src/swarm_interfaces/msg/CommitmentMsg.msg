@@ -1,0 +1,6 @@
+string request_id
+int32 sensor_id
+int32 assigned_target_id
+float64 intercept_x
+float64 intercept_y
+builtin_interfaces/Time stamp
