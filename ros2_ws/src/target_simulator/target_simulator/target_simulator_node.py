@@ -9,17 +9,21 @@ class TargetSimulatorNode(Node):
 
         self.declare_parameter('num_targets', 3)
         self.declare_parameter('dt', 0.1)
+        self.declare_parameter('init_x',  [-5.0,  30.0,  15.0])
+        self.declare_parameter('init_y',  [ 0.0,  20.0,  -8.0])
+        self.declare_parameter('init_vx', [ 1.0,  -0.8,   0.3])
+        self.declare_parameter('init_vy', [ 0.0,   0.2,   1.1])
 
         self.num_targets = self.get_parameter('num_targets').value
         self.dt = self.get_parameter('dt').value
+        init_x  = self.get_parameter('init_x').value
+        init_y  = self.get_parameter('init_y').value
+        init_vx = self.get_parameter('init_vx').value
+        init_vy = self.get_parameter('init_vy').value
 
-        # Target 0 starts at x=-5, moves right at vx=1.0
-        # → enters sensor 0's detection range (r_d=1.5) at t≈3.5s
-        # → exits at t≈6.5s — FSM transitions will be visible
         self.states = [
-            {'x': -5.0, 'y':  0.0, 'vx': 1.0, 'vy': 0.0},
-            {'x': 30.0, 'y': 20.0, 'vx': -0.8, 'vy': 0.2},
-            {'x': 15.0, 'y': -8.0, 'vx': 0.3, 'vy': 1.1},
+            {'x': init_x[i], 'y': init_y[i], 'vx': init_vx[i], 'vy': init_vy[i]}
+            for i in range(self.num_targets)
         ]
 
         self.pubs = []

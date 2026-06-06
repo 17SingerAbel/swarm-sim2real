@@ -1,0 +1,27 @@
+# sim_m3_params.yaml
+# Extends M2 params with EKF configuration for per-sensor estimation.
+
+swarm:
+  grid_size: 5
+  node_spacing: 12.0        # units; = 8 x detection_radius (paper §3.1)
+  detection_radius: 1.5     # r_d
+  communication_range: 18.0 # r_c — used from M4 onward
+  num_targets: 3
+  dt: 0.1
+
+  # EKF parameters (M3) — values match MATLAB baseline (example_V47 lines 283-284)
+  # MATLAB: Q = 0.01*eye(2), R = 0.0025*eye(2)
+  # r_std = sqrt(0.0025) = 0.05 ; q_std = sqrt(0.01) = 0.1
+  # Q structure uses DWNA model: Q_k = G*Q*G', effective Q_v = q_std^2 * dt^2 = 0.0001
+  ekf_r_std: 0.05           # sqrt(R_diag) = sqrt(0.0025)
+  ekf_q_std: 0.1            # sqrt(Q_accel) = sqrt(0.01), used in DWNA G*Q*G' expansion
+  ekf_convergence_threshold: 0.006  # Pvx and Pvy must both drop below this (MATLAB baseline)
+  sensor_max_speed: 0.8             # units/s (paper §5.1: v_s = 0.75; 0.8 gives slight margin)
+
+targets:
+  # Initial state for each target: [target_0, target_1, target_2]
+  # target_0 passes through sensor_0 (0,0) at t≈3.5s–6.5s
+  init_x:  [-5.0,  30.0,  15.0]
+  init_y:  [ 0.0,  20.0,  -8.0]
+  init_vx: [ 1.0,  -0.8,   0.3]
+  init_vy: [ 0.0,   0.2,   1.1]
