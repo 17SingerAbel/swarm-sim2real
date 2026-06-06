@@ -6,7 +6,7 @@ swarm:
   node_spacing: 12.0        # units; = 8 x detection_radius (paper §3.1)
   detection_radius: 1.5     # r_d
   communication_range: 18.0 # r_c — software-gated in simulation
-  num_targets: 3
+  num_targets: 1
   dt: 0.1
 
   # EKF parameters (same as M3)

@@ -270,7 +270,7 @@ builtin_interfaces/Time stamp
 |---|---|---|---|
 | **M1** ✅ | Minimal running graph: 1 sensor, 3 targets, FSM transitions visible | `swarm_interfaces` (TargetState, SensorState), `target_simulator` (linear motion), `sensor_agent` (3-state FSM), `swarm_bringup` (launch + YAML) | `ros2 topic echo /sensors/0/state` shows FSM transitions as target enters/leaves range |
 | **M2** ✅ | All 25 sensors on hex grid, launched from YAML config | `sim_m2_params.yaml` (grid config), `sim_m2.launch.py` (dynamic Node() generation, hex grid computation in Python) | `ros2 node list` shows 26 nodes (target_simulator + 25 sensor_agent); each has correct home position from `ros2 param get` |
-| **M3** | Per-sensor EKF, noisy measurements, estimate topics | `TargetEstimate` msg, EKF class inside sensor_agent | EKF estimates converge toward ground truth; ekf_converged flag transitions correctly |
+| **M3** ✅ | Per-sensor EKF, noisy measurements, estimate topics | `TargetEstimate` msg, EKF class inside sensor_agent | EKF estimates converge toward ground truth; ekf_converged flag transitions correctly |
 | **M4** | Distributed handover: request → bidding → reconstruction → self-assignment | `HandoverRequest`, `BidMsg`, `CommitmentMsg` msgs, bidding window timer in sensor_agent | One-target handover event fires, 2 sensors self-assign as interceptors matching expected bid order |
 | **M5** | Multi-target conflict resolution (expanded joint assignment scope) | Two-stage LP solver inside sensor_agent, scope expansion logic | Two-target conflict reproduces Section 5.3 result from paper: committed interceptor is not stolen |
 | **M6** | RViz2 visualization | `swarm_visualization` node, MarkerArray for grid, targets, FSM colors | Grid + targets + FSM states visible in RViz2 in real time |
@@ -378,7 +378,64 @@ Use `RELIABLE` for event messages (handover requests, bids, commitments). Use `B
 
 ---
 
-## 12. MATLAB Baseline Reference
+## 12. M4 Handover Protocol Design
+
+### What kind of protocol this is
+
+This is a **distributed auction**, not a three-way handshake. There is no acknowledgment chain between specific pairs of nodes. The flow has three phases:
+
+```
+Phase 1 — Request (1 message)
+  Tracker  →  /swarm/handover_request  →  [all sensors hear it]
+
+Phase 2 — Bidding (N messages, one per eligible bidder)
+  Sensor_i →  /swarm/bids             →  [all sensors hear it]
+  Sensor_j →  /swarm/bids             →  [all sensors hear it]
+  ...
+
+Phase 3 — Self-assignment (2 messages for 2 slots)
+  Winner_a →  /swarm/commitment       →  [informational only]
+  Winner_b →  /swarm/commitment       →  [informational only]
+```
+
+### Current implementation: global topic + software r_c filter
+
+In ROS 2 simulation, all topics are DDS global broadcasts. All 25 sensors receive every message on a shared topic within microseconds (negligible vs. dt = 0.1 s).
+
+The communication range constraint `r_c = 18` is enforced as a **software gate** inside each sensor's callback:
+
+```python
+def _handover_request_cb(self, msg):
+    requesting_pos = self._known_sensor_positions[msg.requesting_sensor_id]
+    if dist(self.pos, requesting_pos) > self.communication_range:
+        return   # outside r_c — ignore
+    # otherwise: compute bid and publish
+```
+
+This means:
+- All sensors subscribe to the same global topic (no multi-hop routing in simulation)
+- Each sensor independently decides whether it is within r_c of the requester
+- All eligible sensors start their bidding window timer at approximately the same time (same message triggers all callbacks)
+
+**Why this is intentional for M4:** The goal of M4 is to port the MATLAB algorithm to ROS 2 and validate correctness of the assignment logic. Communication realism is out of scope until M8.
+
+**What changes at M8:** Multi-hop gossip propagation, simulated latency, packet loss, and inconsistent bid subsets. The r_c software gate will be replaced by actual network topology constraints.
+
+### Bidding window timing
+
+Every sensor that receives a `HandoverRequest` starts a one-shot timer for `Δt_bid` seconds. Because ROS 2 DDS delivers messages with sub-millisecond jitter (on the same machine), all sensors start their timers within the same DES step. After `Δt_bid`, each sensor independently runs the assignment solver on the bids it collected.
+
+The `CommitmentMsg` is published **after** assignment reconstruction, not during the bidding window. It is informational — other sensors use it to update their view of who is committed (relevant for M5 conflict resolution). It does **not** terminate the bidding window for other sensors, because assignment reconstruction requires the complete bid set.
+
+### Known sensor positions
+
+For the r_c software filter to work, each sensor needs to know the positions of all other sensors. In simulation, home positions are fixed and known from YAML config. Each sensor stores a lookup table `{sensor_id: (home_x, home_y)}` populated at init from the YAML parameters passed to it via the launch file.
+
+In real hardware (M9), this lookup would come from a localization system.
+
+---
+
+## 13. MATLAB Baseline Reference
 
 Active MATLAB source of truth: `matlab-sim/src/example_V47_Yeqi.m`
 
@@ -401,7 +458,7 @@ Key MATLAB helper functions and their ROS 2 equivalents:
 
 ---
 
-## 13. Validation Strategy
+## 14. Validation Strategy
 
 Behavior validation (not just code review):
 
@@ -418,7 +475,7 @@ Behavior validation (not just code review):
 
 ---
 
-## 14. File and Topic Naming Conventions
+## 15. File and Topic Naming Conventions
 
 - Sensor IDs: 0–24 (integer), matching MATLAB node numbering `col * 5 + row`
 - Target IDs: 0–2 (integer, 0-indexed)
@@ -429,7 +486,7 @@ Behavior validation (not just code review):
 
 ---
 
-## 15. What To Do at the Start of a New Session
+## 16. What To Do at the Start of a New Session
 
 1. Read this file (`ros2-design.md`) fully.
 2. Read `plan.md` for the high-level roadmap.
