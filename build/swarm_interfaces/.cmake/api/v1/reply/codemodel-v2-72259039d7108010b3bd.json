@@ -1,0 +1,258 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-b094dd8c6aabe7e4956b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						17,
+						18
+					]
+				},
+				{
+					"build" : "swarm_interfaces__py",
+					"jsonFile" : "directory-swarm_interfaces__py-d0dba6f3f6beb43a53c5.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "/home/abel/projects/swarm-sim2real/build/swarm_interfaces/swarm_interfaces__py",
+					"targetIndexes" : 
+					[
+						4
+					]
+				},
+				{
+					"build" : "swarm_interfaces__rs",
+					"jsonFile" : "directory-swarm_interfaces__rs-2b22dbbe2e3feffaaf30.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "/home/abel/projects/swarm-sim2real/build/swarm_interfaces/swarm_interfaces__rs",
+					"targetIndexes" : 
+					[
+						16
+					]
+				}
+			],
+			"name" : "",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0,
+						1,
+						2
+					],
+					"name" : "swarm_interfaces",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_build_swarm_interfaces_egg::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_build_swarm_interfaces_egg-43643b5350c794bff1d3.json",
+					"name" : "ament_cmake_python_build_swarm_interfaces_egg",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_copy_swarm_interfaces::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_copy_swarm_interfaces-e0569c75ffc8d99f2760.json",
+					"name" : "ament_cmake_python_copy_swarm_interfaces",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces-1af582d2f6a54d9bb325.json",
+					"name" : "swarm_interfaces",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__cpp-473a29af6c49f353258a.json",
+					"name" : "swarm_interfaces__cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "swarm_interfaces__py::@d25b07df7330d5f63c01",
+					"jsonFile" : "target-swarm_interfaces__py-2edf2ee12d816682185e.json",
+					"name" : "swarm_interfaces__py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_generator_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_generator_c-12d3ae30a299f012c516.json",
+					"name" : "swarm_interfaces__rosidl_generator_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_generator_py::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_generator_py-222e280b4b1d934a4bd3.json",
+					"name" : "swarm_interfaces__rosidl_generator_py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_c-094ea4a666ce72e87150.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_c__pyext-70758c16e92076960cb5.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_cpp-4dc85b6067c6b1ffac5d.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_fastrtps_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_fastrtps_c-520c5ddac09a29054730.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_fastrtps_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_fastrtps_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_fastrtps_c__pyext-13657d50f174bde267fe.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_fastrtps_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_fastrtps_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_fastrtps_cpp-2b7451efddb3afeedef9.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_fastrtps_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_introspection_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_introspection_c-870e9fecd24518f5be60.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_introspection_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_introspection_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_introspection_c__pyext-7e0959e439a1d1d7c489.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_introspection_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces__rosidl_typesupport_introspection_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces__rosidl_typesupport_introspection_cpp-f27cc679d30fd63cf27e.json",
+					"name" : "swarm_interfaces__rosidl_typesupport_introspection_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "swarm_interfaces__rs::@ecf14035cba20d16a0ce",
+					"jsonFile" : "target-swarm_interfaces__rs-36d34d570b7856955b9f.json",
+					"name" : "swarm_interfaces__rs",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "swarm_interfaces_uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-swarm_interfaces_uninstall-fff880252d6eccc8e80d.json",
+					"name" : "swarm_interfaces_uninstall",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-uninstall-f0afacf4ba3d67281790.json",
+					"name" : "uninstall",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/abel/projects/swarm-sim2real/build/swarm_interfaces",
+		"source" : "/home/abel/projects/swarm-sim2real/ros2_ws/src/swarm_interfaces"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

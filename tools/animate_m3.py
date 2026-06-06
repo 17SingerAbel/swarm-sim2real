@@ -1,47 +1,78 @@
 #!/usr/bin/env python3
 """
-M3 animation: reads a ROS 2 bag, renders a 10-second animation.
+M3 animation — visual style matches MATLAB V47 main animation.
 
 Usage:
   source ~/projects/swarm-sim2real/ros2_ws/install/setup.bash
   python3 tools/animate_m3.py swarm_m3_bag/
-  python3 tools/animate_m3.py swarm_m3_bag/ --out m3.gif --sim-secs 20
+  python3 tools/animate_m3.py swarm_m3_bag/ --out m3.mp4 --sim-secs 30 --fps 10
 """
 
 import argparse
+import math
 import os
 import sys
-import yaml
-import numpy as np
+
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
+import yaml
+from matplotlib.lines import Line2D
+from matplotlib.patches import Ellipse
 
 import rosbag2_py
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
-# -----------------------------------------------------------------
-# Constants
-# -----------------------------------------------------------------
 
-FSM_COLORS = {
-    'IDLE':           '#3a4a5c',
-    'DETECTING':      '#f0c040',
-    'TRACKING':       '#40c880',
-    'INTERCEPTING':   '#e05050',
-    'SEARCHING':      '#c060c0',
-    'RETURNING_HOME': '#4080cc',
+# ── Visual constants (MATLAB V47 semantics) ───────────────────────────────────
+
+# Target: T1 red · T2 green · T3 blue
+TARGET_COLORS = ['#cc0000', '#007700', '#0044cc']
+TARGET_NAMES  = ['Target 1', 'Target 2', 'Target 3']
+
+# Interceptor color depends on assigned target
+INTERCEPTOR_COLORS = {0: '#ff7700', 1: '#007700', 2: '#888888'}
+
+COLOR_PRIMARY      = '#ff0000'  # bright red
+COLOR_SECONDARY    = '#770000'  # dark red
+COLOR_RETURNING    = '#ee00ee'  # magenta
+COLOR_DETECTING    = '#00bbbb'  # cyan
+COLOR_IDLE_NORMAL  = '#001f5b'  # navy blue
+COLOR_IDLE_PREV    = '#99ccdd'  # light cyan  (previously detected)
+COLOR_SEARCHING    = '#660066'  # purple
+
+# EKF covariance contour styles per target: [(color, linestyle), ...] 3σ→2σ→1σ
+COV_STYLES = {
+    0: [('#009900', '--'), ('#cc0000', '-'), ('#0000cc', '-')],  # T1: green/red/blue
+    1: [('#cc00cc', '--'), ('#aaaa00', '-'), ('#009999', '-')],  # T2: magenta/yellow/cyan
+    2: [('#0000cc', '--'), ('#666666', '-'), ('#000000', '-')],  # T3: blue/gray/black
 }
-TARGET_COLORS = ['#ff6b6b', '#4ecdc4', '#ffe66d']
-DETECTION_RADIUS = 1.5
+SIGMA_LEVELS   = [3, 2, 1]
+DETECTION_R    = 1.5
 
 
-# -----------------------------------------------------------------
-# Bag reading
-# -----------------------------------------------------------------
+# ── Color helper ──────────────────────────────────────────────────────────────
+
+def _sensor_color(fsm, role, atid, ever_active):
+    if fsm == 'TRACKING':
+        return COLOR_PRIMARY if role == 'PRIMARY_TRACKER' else COLOR_SECONDARY
+    if fsm == 'INTERCEPTING':
+        return INTERCEPTOR_COLORS.get(atid, '#ff7700')
+    if fsm == 'RETURNING_HOME':
+        return COLOR_RETURNING
+    if fsm == 'DETECTING':
+        return COLOR_DETECTING
+    if fsm == 'SEARCHING':
+        return COLOR_SEARCHING
+    # IDLE
+    return COLOR_IDLE_PREV if ever_active else COLOR_IDLE_NORMAL
+
+
+# ── Bag reading ───────────────────────────────────────────────────────────────
 
 def _storage_id(bag_path):
     meta = os.path.join(bag_path, 'metadata.yaml')
@@ -54,17 +85,15 @@ def _storage_id(bag_path):
 
 def read_bag(bag_path):
     """
-    Returns three dicts keyed by id, each a time-sorted list of tuples:
-      sensor_frames  {sid: [(t, px, py, fsm_state, assigned_tid), ...]}
+    Returns three dicts:
+      sensor_frames  {sid: [(t, px, py, fsm, role, atid), ...]}
       target_frames  {tid: [(t, x,  y), ...]}
-      ekf_frames     {sid: [(t, tid, est_x, est_y, converged), ...]}
+      ekf_frames     {sid: [(t, tid, ex, ey, conv, Pxx, Pyy), ...]}
     """
     storage_options = rosbag2_py.StorageOptions(
         uri=bag_path, storage_id=_storage_id(bag_path))
-    converter_options = rosbag2_py.ConverterOptions('', '')
     reader = rosbag2_py.SequentialReader()
-    reader.open(storage_options, converter_options)
-
+    reader.open(storage_options, rosbag2_py.ConverterOptions('', ''))
     type_map = {t.name: t.type for t in reader.get_all_topics_and_types()}
 
     sensor_frames, target_frames, ekf_frames = {}, {}, {}
@@ -73,22 +102,26 @@ def read_bag(bag_path):
         topic, data, t_ns = reader.read_next()
         if topic not in type_map:
             continue
-        t = t_ns * 1e-9
+        t   = t_ns * 1e-9
         msg = deserialize_message(data, get_message(type_map[topic]))
 
         if '/sensors/' in topic and topic.endswith('/state'):
-            sid = msg.sensor_id
+            sid  = msg.sensor_id
+            role = getattr(msg, 'role', 'NONE')
             sensor_frames.setdefault(sid, []).append(
-                (t, msg.pos_x, msg.pos_y, msg.fsm_state, msg.assigned_target_id))
+                (t, msg.pos_x, msg.pos_y, msg.fsm_state, role,
+                 msg.assigned_target_id))
 
         elif '/targets/' in topic and topic.endswith('/ground_truth'):
-            tid = msg.target_id
-            target_frames.setdefault(tid, []).append((t, msg.x, msg.y))
+            target_frames.setdefault(msg.target_id, []).append(
+                (t, msg.x, msg.y))
 
         elif '/sensors/' in topic and topic.endswith('/ekf_estimate'):
             sid = msg.sensor_id
+            cov = list(getattr(msg, 'covariance', [0.0, 0.0, 0.0, 0.0]))
             ekf_frames.setdefault(sid, []).append(
-                (t, msg.target_id, msg.x, msg.y, msg.ekf_converged))
+                (t, msg.target_id, msg.x, msg.y, msg.ekf_converged,
+                 float(cov[0]), float(cov[1])))  # Pxx, Pyy
 
     for d in (sensor_frames, target_frames, ekf_frames):
         for k in d:
@@ -98,7 +131,7 @@ def read_bag(bag_path):
 
 
 def _lookup(lst, t):
-    """Binary-search: return entry with largest timestamp <= t."""
+    """Binary search: last entry with timestamp <= t."""
     lo, hi = 0, len(lst) - 1
     while lo < hi:
         mid = (lo + hi + 1) // 2
@@ -109,9 +142,7 @@ def _lookup(lst, t):
     return lst[lo]
 
 
-# -----------------------------------------------------------------
-# Animation
-# -----------------------------------------------------------------
+# ── Animation ─────────────────────────────────────────────────────────────────
 
 def make_animation(bag_path, out_path, sim_secs=30.0, fps=10):
     print(f"Reading {bag_path} …")
@@ -120,163 +151,295 @@ def make_animation(bag_path, out_path, sim_secs=30.0, fps=10):
     if not sensor_frames:
         sys.exit("ERROR: no /sensors/*/state messages found in bag")
 
-    t0 = min(v[0][0] for v in sensor_frames.values())
-    n_frames = fps * 10        # always 10 seconds of animation
-    dt_frame = sim_secs / n_frames   # sim-seconds per animation frame
-
-    print(f"  {len(sensor_frames)} sensors | {len(target_frames)} targets")
-    print(f"  sim {t0:.1f}s → {t0+sim_secs:.1f}s  →  10 s @ {fps} fps  (×{sim_secs/10:.1f} speed)")
-
+    t0         = min(v[0][0] for v in sensor_frames.values())
+    n_frames   = fps * 10          # always 10 s of animation
+    dt_frame   = sim_secs / n_frames
     sensor_ids = sorted(sensor_frames)
+    target_ids = sorted(target_frames)
+    n_tgt      = len(target_ids)
 
-    # ---- figure setup ----
-    fig, ax = plt.subplots(figsize=(9, 8))
-    fig.patch.set_facecolor('#0d1117')
-    ax.set_facecolor('#0d1117')
-    ax.set_xlim(-12, 62)
-    ax.set_ylim(-18, 58)
+    print(f"  {len(sensor_ids)} sensors | {n_tgt} targets")
+    print(f"  sim {t0:.1f}s → {t0+sim_secs:.1f}s  →  10 s @ {fps} fps  "
+          f"(×{sim_secs/10:.1f} speed)")
+
+    # -- pre-compute first activation time per sensor (for prev-detected coloring)
+    first_active = {}
+    for sid, frames in sensor_frames.items():
+        for frame in frames:
+            if frame[3] != 'IDLE':          # fsm_state is index 3
+                first_active[sid] = frame[0]
+                break
+
+    # -- pre-compute time-sorted active assignments per sensor (for SEARCHING context)
+    active_asgn = {}
+    for sid, frames in sensor_frames.items():
+        active_asgn[sid] = [(f[0], f[5]) for f in frames if f[5] >= 0]
+
+    def _last_assigned(sid, t):
+        for tf, atid in reversed(active_asgn.get(sid, [])):
+            if tf <= t:
+                return atid
+        return -1
+
+    # ── Figure (white background) ─────────────────────────────────────────────
+    fig = plt.figure(figsize=(13, 9), facecolor='white')
+    # main axes: left ~60% of figure
+    ax  = fig.add_axes([0.05, 0.12, 0.60, 0.82])
+    ax.set_facecolor('white')
+    ax.set_xlim(-10, 62)
+    ax.set_ylim(-8, 60)
     ax.set_aspect('equal')
-    ax.set_xlabel('x (units)', color='#8b949e', fontsize=9)
-    ax.set_ylabel('y (units)', color='#8b949e', fontsize=9)
-    ax.tick_params(colors='#8b949e', labelsize=8)
+    ax.set_xlabel('x (units)', fontsize=9, color='#333333')
+    ax.set_ylabel('y (units)', fontsize=9, color='#333333')
+    ax.tick_params(colors='#333333', labelsize=8)
     for sp in ax.spines.values():
-        sp.set_edgecolor('#30363d')
-    ax.set_title('ROS 2 M3 — Distributed EKF Swarm Tracking',
-                 color='#e6edf3', fontsize=12, pad=10)
+        sp.set_edgecolor('#cccccc')
+    ax.grid(True, color='#eeeeee', linewidth=0.5, zorder=0)
+    title_obj = ax.set_title('', fontsize=11, color='#111111', pad=8)
 
-    # sensor body dots
-    sensor_sc = ax.scatter([], [], s=110, zorder=4)
-    # converged white ring
-    conv_sc = ax.scatter([], [], s=200, facecolors='none',
-                         edgecolors='#ffffff', linewidths=2.0, zorder=5)
-    # EKF estimate ×
-    ekf_sc = ax.scatter([], [], s=50, marker='x', color='white',
-                        linewidths=1.2, alpha=0.75, zorder=6)
-
-    # detection-radius circles (one per sensor, toggled visible)
-    det_circles = []
+    # ── Coverage disks — all 25, always shown, semi-transparent ──────────────
+    cov_circles = []
     for _ in sensor_ids:
-        c = plt.Circle((0, 0), DETECTION_RADIUS,
-                        fill=False, edgecolor='#ffffff18', linewidth=0.8, zorder=2)
+        c = plt.Circle((0, 0), DETECTION_R,
+                        facecolor='#999999', alpha=0.10,
+                        edgecolor='#aaaaaa', linewidth=0.5, zorder=1)
         ax.add_patch(c)
-        c.set_visible(False)
-        det_circles.append(c)
+        cov_circles.append(c)
 
-    # target stars + trails
-    tgt_objs = []
-    for i, tid in enumerate(sorted(target_frames)):
-        sc = ax.scatter([], [], s=250, marker='*',
-                        color=TARGET_COLORS[i % len(TARGET_COLORS)],
-                        zorder=8, label=f'Target {tid}')
-        trail, = ax.plot([], [], color=TARGET_COLORS[i % len(TARGET_COLORS)],
-                         alpha=0.35, lw=1.8, zorder=3)
-        tgt_objs.append((tid, sc, trail))
+    # ── Target full-history trails ────────────────────────────────────────────
+    trail_lines = {}
+    for i, tid in enumerate(target_ids):
+        line, = ax.plot([], [], color=TARGET_COLORS[i % 3],
+                        lw=1.5, alpha=0.65, zorder=3)
+        trail_lines[tid] = line
 
-    time_text = ax.text(0.02, 0.97, '', transform=ax.transAxes,
-                        color='#e6edf3', fontsize=10, va='top', family='monospace')
+    # ── Target star markers ───────────────────────────────────────────────────
+    tgt_stars = {}
+    for i, tid in enumerate(target_ids):
+        sc = ax.scatter([], [], s=300, marker='*',
+                        color=TARGET_COLORS[i % 3], zorder=9,
+                        edgecolors='none')
+        tgt_stars[tid] = sc
 
-    # legend
-    fsm_patches = [mpatches.Patch(color=c, label=s.replace('_', ' '))
-                   for s, c in FSM_COLORS.items()
-                   if s in ('IDLE', 'DETECTING', 'TRACKING', 'RETURNING_HOME')]
-    conv_patch = mpatches.Patch(facecolor='none', edgecolor='white',
-                                linewidth=1.5, label='EKF converged (ring)')
-    ekf_handle = mpatches.Patch(color='white', label='EKF estimate (×)',
-                                alpha=0.75)
-    ax.legend(handles=fsm_patches + [conv_patch, ekf_handle],
-              loc='lower right', fontsize=7.5,
-              facecolor='#161b22', labelcolor='#e6edf3', edgecolor='#30363d')
+    # ── Sensor center dots ────────────────────────────────────────────────────
+    sensor_sc = ax.scatter([], [], s=80, zorder=5, edgecolors='none')
 
-    # ---- per-frame update ----
+    # ── EKF estimate × marks (shown when TRACKING / DETECTING) ───────────────
+    ekf_sc = ax.scatter([], [], s=40, marker='x', color='#444444',
+                        linewidths=1.0, alpha=0.55, zorder=6)
+
+    # ── Sensor numbered labels ────────────────────────────────────────────────
+    sensor_labels = []
+    for _ in sensor_ids:
+        txt = ax.text(0, 0, '', fontsize=6, color='#222222',
+                      ha='center', va='bottom', zorder=7)
+        sensor_labels.append(txt)
+
+    # ── EKF covariance contour ellipses (3 targets × 3 σ levels) ─────────────
+    cov_ellipses = {}
+    for tid in range(3):
+        cov_ellipses[tid] = []
+        styles = COV_STYLES.get(tid, COV_STYLES[0])
+        for _sigma, (color, ls) in zip(SIGMA_LEVELS, styles):
+            e = Ellipse((0, 0), 0, 0, facecolor='none', edgecolor=color,
+                        linewidth=1.2, linestyle=ls, zorder=4)
+            e.set_visible(False)
+            ax.add_patch(e)
+            cov_ellipses[tid].append(e)
+
+    # ── Status text box (lower-left inside main axes) ─────────────────────────
+    status_box = ax.text(
+        0.01, 0.01, '',
+        transform=ax.transAxes,
+        fontsize=7.5, va='bottom', ha='left', family='monospace',
+        color='#111111',
+        bbox=dict(boxstyle='round,pad=0.5', facecolor='#f8f8f8',
+                  edgecolor='#999999', alpha=0.90),
+        zorder=10)
+
+    # ── Legend panel (right ~30% of figure) ──────────────────────────────────
+    ax_leg = fig.add_axes([0.68, 0.05, 0.30, 0.92])
+    ax_leg.axis('off')
+    ax_leg.set_title('Legend', fontsize=9, loc='left', pad=8, color='#333333')
+
+    leg_handles = []
+
+    # Target stars
+    for i in range(n_tgt):
+        name = TARGET_NAMES[i] if i < len(TARGET_NAMES) else f'Target {i+1}'
+        leg_handles.append(Line2D([0], [0], marker='*', color='w',
+            markerfacecolor=TARGET_COLORS[i], markersize=11, label=name))
+
+    # Target paths
+    for i in range(n_tgt):
+        name = TARGET_NAMES[i] if i < len(TARGET_NAMES) else f'Target {i+1}'
+        leg_handles.append(Line2D([0], [0], color=TARGET_COLORS[i],
+            lw=1.5, alpha=0.7, label=f'{name} Path'))
+
+    # Target interceptor colors
+    int_labels = ['T1 Interceptor', 'T2 Interceptor', 'T3 Interceptor']
+    for i in range(min(3, n_tgt)):
+        leg_handles.append(mpatches.Patch(
+            color=INTERCEPTOR_COLORS[i], label=int_labels[i]))
+
+    # Sensor role / state patches
+    leg_handles += [
+        mpatches.Patch(color=COLOR_PRIMARY,     label='Primary Tracker'),
+        mpatches.Patch(color=COLOR_SECONDARY,   label='Secondary Tracker'),
+        mpatches.Patch(color=COLOR_RETURNING,   label='Returning Home'),
+        mpatches.Patch(color=COLOR_DETECTING,   label='Detecting'),
+        mpatches.Patch(color=COLOR_IDLE_NORMAL, label='Normal Sensor'),
+        mpatches.Patch(color=COLOR_IDLE_PREV,   label='Prev. Detected'),
+        mpatches.Patch(color=COLOR_SEARCHING,   label='Searching'),
+    ]
+
+    ax_leg.legend(handles=leg_handles, loc='upper left',
+                  fontsize=8.5, framealpha=0.9, edgecolor='#cccccc',
+                  labelcolor='#111111')
+
+    # ── Per-frame update ──────────────────────────────────────────────────────
     def update(frame_idx):
         t = t0 + frame_idx * dt_frame
 
         s_xy, s_colors = [], []
-        conv_xy, ekf_xy = [], []
+        ekf_xy = []
+        counts = {k: 0 for k in
+                  ('TRACKING', 'INTERCEPTING', 'SEARCHING',
+                   'RETURNING_HOME', 'DETECTING')}
+        per_tgt = {tid: 0 for tid in target_ids}
+        searching_ekf = {}   # tid → (ex, ey, Pxx, Pyy)
 
         for j, sid in enumerate(sensor_ids):
             if not sensor_frames.get(sid):
                 continue
-            _, px, py, fsm, _ = _lookup(sensor_frames[sid], t)
+            _, px, py, fsm, role, atid = _lookup(sensor_frames[sid], t)
+            ever_active = t >= first_active.get(sid, float('inf'))
+
             s_xy.append([px, py])
-            s_colors.append(FSM_COLORS.get(fsm, '#3a4a5c'))
+            s_colors.append(_sensor_color(fsm, role, atid, ever_active))
 
-            active = fsm in ('DETECTING', 'TRACKING')
-            det_circles[j].center = (px, py)
-            det_circles[j].set_visible(active)
+            # Move coverage disk and label
+            cov_circles[j].center = (px, py)
+            sensor_labels[j].set_position((px, py + DETECTION_R * 1.2))
+            sensor_labels[j].set_text(str(sid))
 
-            # converged ring
-            if fsm == 'TRACKING' and sid in ekf_frames and ekf_frames[sid]:
-                _, _, ex, ey, converged = _lookup(ekf_frames[sid], t)
-                ekf_xy.append([ex, ey])
-                if converged:
-                    conv_xy.append([px, py])
+            # State counts
+            if fsm in counts:
+                counts[fsm] += 1
+            if fsm == 'TRACKING' and atid in per_tgt:
+                per_tgt[atid] += 1
+
+            # EKF estimates
+            if sid in ekf_frames and ekf_frames[sid]:
+                if fsm in ('TRACKING', 'DETECTING'):
+                    e = _lookup(ekf_frames[sid], t)
+                    ekf_xy.append([e[2], e[3]])
+                elif fsm == 'SEARCHING':
+                    stid = _last_assigned(sid, t)
+                    if stid >= 0:
+                        relevant = [e for e in ekf_frames[sid]
+                                    if e[1] == stid and e[0] <= t]
+                        if relevant and stid not in searching_ekf:
+                            e = relevant[-1]
+                            searching_ekf[stid] = (e[2], e[3], e[5], e[6])
 
         sensor_sc.set_offsets(np.array(s_xy) if s_xy else np.empty((0, 2)))
         sensor_sc.set_facecolor(s_colors)
-
-        conv_sc.set_offsets(np.array(conv_xy) if conv_xy else np.empty((0, 2)))
         ekf_sc.set_offsets(np.array(ekf_xy) if ekf_xy else np.empty((0, 2)))
 
-        # targets
-        for tid, sc, trail in tgt_objs:
+        # Target trails (full history) + star position
+        for i, tid in enumerate(target_ids):
             if not target_frames.get(tid):
                 continue
-            _, tx, ty = _lookup(target_frames[tid], t)
-            sc.set_offsets([[tx, ty]])
-            pts = [(x, y) for ts, x, y in target_frames[tid] if t - 4.0 <= ts <= t]
+            pts = [(x, y) for ts, x, y in target_frames[tid] if ts <= t]
             if pts:
-                trail.set_data(*zip(*pts))
+                xs, ys = zip(*pts)
+                trail_lines[tid].set_data(xs, ys)
+            _, tx, ty = _lookup(target_frames[tid], t)
+            tgt_stars[tid].set_offsets([[tx, ty]])
 
-        time_text.set_text(f't = {t - t0:5.1f} s')
+        # Covariance contour ellipses (only during SEARCHING)
+        for tid in range(3):
+            if tid in searching_ekf:
+                ex, ey, pxx, pyy = searching_ekf[tid]
+                sx = math.sqrt(max(pxx, 1e-9))
+                sy = math.sqrt(max(pyy, 1e-9))
+                for k, (sigma, ell) in enumerate(
+                        zip(SIGMA_LEVELS, cov_ellipses[tid])):
+                    ell.set_center((ex, ey))
+                    ell.width  = 2 * sigma * sx
+                    ell.height = 2 * sigma * sy
+                    ell.set_visible(True)
+            else:
+                for ell in cov_ellipses[tid]:
+                    ell.set_visible(False)
 
-        artists = [sensor_sc, conv_sc, ekf_sc, time_text]
-        artists += [sc for _, sc, _ in tgt_objs]
-        artists += [tr for _, _, tr in tgt_objs]
-        return artists
+        # Title — time + system state
+        any_active = (counts['TRACKING'] + counts['INTERCEPTING']
+                      + counts['DETECTING']) > 0
+        sys_state  = ('TRACKING'  if any_active else
+                      'SEARCHING' if counts['SEARCHING'] > 0 else 'IDLE')
+        title_obj.set_text(
+            f'ROS 2 M3 — Distributed EKF Swarm Tracking     '
+            f't = {t - t0:5.1f} s     System: {sys_state}')
+
+        # Status box
+        t_track = '  '.join(
+            f'T{i+1}:{per_tgt.get(tid, 0)}'
+            for i, tid in enumerate(target_ids))
+        status_box.set_text(
+            f'System: {sys_state}\n'
+            f'Tracking: {counts["TRACKING"]}   '
+            f'Detecting: {counts["DETECTING"]}\n'
+            f'Intercepting: {counts["INTERCEPTING"]}   '
+            f'Searching: {counts["SEARCHING"]}   '
+            f'Returning: {counts["RETURNING_HOME"]}\n'
+            f'Trackers per target:  {t_track}')
+
+        return ([sensor_sc, ekf_sc, title_obj, status_box]
+                + list(trail_lines.values())
+                + list(tgt_stars.values())
+                + cov_circles
+                + sensor_labels
+                + [e for lst in cov_ellipses.values() for e in lst])
 
     ani = animation.FuncAnimation(fig, update, frames=n_frames,
                                   interval=1000 // fps, blit=True)
 
+    # ── Save ──────────────────────────────────────────────────────────────────
     print(f"Rendering {n_frames} frames → {out_path} …")
     if out_path.endswith('.gif'):
-        writer = animation.PillowWriter(fps=fps)
-        ani.save(out_path, writer=writer, dpi=100)
+        ani.save(out_path, writer=animation.PillowWriter(fps=fps), dpi=100)
     else:
-        # LinkedIn-compatible MP4: H.264 baseline, yuv420p (no hardware needed)
-        # Falls back to GIF automatically if ffmpeg is missing
-        mp4_args = [
-            '-vcodec', 'libx264',
-            '-pix_fmt', 'yuv420p',
-            '-profile:v', 'baseline',   # maximum device compatibility
-            '-level', '3.0',
-            '-movflags', '+faststart',   # enables streaming on LinkedIn
-        ]
+        mp4_args = ['-vcodec', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-profile:v', 'baseline', '-level', '3.0',
+                    '-movflags', '+faststart']
         try:
-            writer = animation.FFMpegWriter(fps=fps, bitrate=1800, extra_args=mp4_args)
-            ani.save(out_path, writer=writer, dpi=120)
+            ani.save(out_path,
+                     writer=animation.FFMpegWriter(fps=fps, bitrate=1800,
+                                                   extra_args=mp4_args),
+                     dpi=120)
         except FileNotFoundError:
             gif_path = out_path.replace('.mp4', '.gif')
             print(f"ffmpeg not found — falling back to GIF: {gif_path}")
-            writer = animation.PillowWriter(fps=fps)
-            ani.save(gif_path, writer=writer, dpi=100)
+            ani.save(gif_path, writer=animation.PillowWriter(fps=fps), dpi=100)
             out_path = gif_path
     print(f"Done → {out_path}")
     plt.close()
 
 
-# -----------------------------------------------------------------
-# Entry point
-# -----------------------------------------------------------------
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(
-        description='Generate 10-second M3 swarm animation from a ROS 2 bag')
-    ap.add_argument('bag', help='Path to ros2 bag directory (e.g. swarm_m3_bag)')
+        description='Generate M3 swarm animation from ROS 2 bag '
+                    '(visual style: MATLAB V47 main animation)')
+    ap.add_argument('bag',
+                    help='Path to ros2 bag directory (e.g. swarm_m3_bag/)')
     ap.add_argument('--out', default='m3_animation.mp4',
-                    help='Output file — .mp4 (FFmpeg) or .gif (Pillow). Default: m3_animation.mp4')
+                    help='Output file (.mp4 or .gif). Default: m3_animation.mp4')
     ap.add_argument('--sim-secs', type=float, default=30.0,
-                    help='Seconds of sim time to compress into 10 s (default: 30)')
+                    help='Sim seconds to compress into 10 s (default: 30)')
     ap.add_argument('--fps', type=int, default=10,
                     help='Animation fps (default: 10)')
     args = ap.parse_args()
@@ -284,4 +447,5 @@ if __name__ == '__main__':
     if not os.path.isdir(args.bag):
         sys.exit(f"ERROR: '{args.bag}' is not a directory")
 
-    make_animation(args.bag, args.out, sim_secs=args.sim_secs, fps=args.fps)
+    make_animation(args.bag, args.out,
+                   sim_secs=args.sim_secs, fps=args.fps)

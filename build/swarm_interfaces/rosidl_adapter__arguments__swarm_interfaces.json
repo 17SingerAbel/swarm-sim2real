@@ -1,0 +1,8 @@
+{
+  "package_name": "swarm_interfaces",
+  "non_idl_tuples": [
+    "/home/abel/projects/swarm-sim2real/ros2_ws/src/swarm_interfaces:msg/TargetState.msg",
+    "/home/abel/projects/swarm-sim2real/ros2_ws/src/swarm_interfaces:msg/SensorState.msg",
+    "/home/abel/projects/swarm-sim2real/ros2_ws/src/swarm_interfaces:msg/TargetEstimate.msg"
+  ]
+}
