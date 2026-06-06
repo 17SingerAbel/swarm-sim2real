@@ -1,0 +1,32 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from swarm_interfaces/msg/TargetEstimate.msg
+// generated code does not contain a copyright notice
+
+#include "builtin_interfaces/msg/Time.idl"
+
+module swarm_interfaces {
+  module msg {
+    typedef double double__4[4];
+    struct TargetEstimate {
+      int32 sensor_id;
+
+      int32 target_id;
+
+      double x;
+
+      double y;
+
+      double vx;
+
+      double vy;
+
+      @verbatim (language="comment", text=
+        "[Pxx, Pyy, Pvx, Pvy]")
+      double__4 covariance;
+
+      boolean ekf_converged;
+
+      builtin_interfaces::msg::Time stamp;
+    };
+  };
+};

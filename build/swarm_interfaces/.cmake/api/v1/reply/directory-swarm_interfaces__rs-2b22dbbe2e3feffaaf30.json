@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "swarm_interfaces__rs",
+		"source" : "/home/abel/projects/swarm-sim2real/build/swarm_interfaces/swarm_interfaces__rs"
+	}
+}

@@ -1,0 +1,3 @@
+[console_scripts]
+sensor_agent_node = sensor_agent.sensor_agent_node:main
+
