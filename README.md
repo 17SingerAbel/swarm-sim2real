@@ -64,7 +64,7 @@ Full architecture decisions, ROS graph, message definitions, and Gazebo integrat
 |---|---|---|
 | M1 | Minimal graph: target simulator + sensor FSM, visible in `ros2 topic echo` | ✅ Done |
 | M2 | All 25 sensors on hex grid, launched from YAML config | ✅ Done |
-| M3 | Per-sensor EKF with noisy measurements, estimate topics | ⏳ Planned |
+| M3 | Per-sensor EKF with noisy measurements, estimate topics, sensor movement | ✅ Done |
 | M4 | Distributed handover: request → bidding window → local assignment reconstruction | ⏳ Planned |
 | M5 | Multi-target conflict resolution via expanded joint assignment scope | ⏳ Planned |
 | M6 | RViz2 visualization: grid, targets, FSM state colors | ⏳ Planned |
@@ -91,6 +91,90 @@ swarm-sim2real/
   ros2-design.md            # full architecture reference document
   plan.md                   # ROS 2 porting roadmap
 ```
+
+---
+
+## Running Milestone 3
+
+### Launch the simulation
+
+```bash
+cd ros2_ws
+colcon build --packages-select sensor_agent swarm_bringup target_simulator
+source install/setup.bash
+ros2 launch swarm_bringup sim_m3.launch.py
+```
+
+**Verify in a second terminal:**
+```bash
+# Watch EKF estimates — ekf_converged should flip to true within ~1 s of TRACKING
+ros2 topic echo /sensors/sensor_0/ekf_estimate
+
+# Watch FSM transitions in launch terminal output:
+# IDLE → DETECTING → TRACKING  (at t ≈ 3.5 s)
+# TRACKING → IDLE              (when target exits detection radius)
+```
+
+### Record a bag
+
+Run the simulation first, then in a second terminal:
+
+```bash
+source ~/projects/swarm-sim2real/ros2_ws/install/setup.bash
+
+# Remove previous bag if it exists (ros2 bag record errors if the folder already exists)
+rm -rf ros2_ws/swarm_m3_bag
+
+ros2 bag record -o ros2_ws/swarm_m3_bag --all
+# Ctrl+C after 30 seconds
+```
+
+### Generate the animation
+
+```bash
+cd ~/projects/swarm-sim2real
+source ros2_ws/install/setup.bash
+
+# MP4 (requires ffmpeg: sudo apt install ffmpeg)
+python3 tools/animate_m3.py ros2_ws/swarm_m3_bag/ --out m3_animation.mp4 --sim-secs 10
+
+# GIF fallback (no ffmpeg needed, larger file)
+python3 tools/animate_m3.py ros2_ws/swarm_m3_bag/ --out m3_animation.gif --sim-secs 10
+```
+
+`--sim-secs` should match how long the bag was recorded. The script always produces a **10-second animation** regardless of `--sim-secs` (the value controls playback speed).
+
+**What the animation shows:**
+
+| Element | Meaning |
+|---|---|
+| Gray dots | Sensors in IDLE state |
+| Yellow dots | Sensors in DETECTING state |
+| Green dots | Sensors in TRACKING state |
+| White ring around dot | `ekf_converged: true` |
+| White × marker | EKF estimated target position |
+| Coloured stars + trail | Target ground-truth positions |
+
+### M3 Implementation Notes
+
+**What changed from M2:**
+
+| File | Change |
+|---|---|
+| `sensor_agent/ekf.py` | New `TargetEKF` class — 4-state constant-velocity KF with DWNA process noise model (`Q = G·q·Gᵀ`), matching MATLAB `Q = 0.01·I`, `R = 0.0025·I` |
+| `sensor_agent/sensor_agent_node.py` | EKF created per target on first detection; predict every tick; update only when in detection range; sensor moves toward EKF estimate when TRACKING, returns home otherwise |
+| `swarm_bringup/config/sim_m3_params.yaml` | Added `ekf_r_std`, `ekf_q_std`, `ekf_convergence_threshold`, `sensor_max_speed`; moved target initial states to configurable `targets:` block |
+| `target_simulator/target_simulator_node.py` | Initial positions and velocities now read from ROS parameters instead of hardcoded |
+| `tools/animate_m3.py` | New script: reads a ros2 bag, renders sensor FSM states + EKF convergence + target trajectories as a 10-second animation |
+
+**Key EKF design decisions:**
+- Process noise uses the DWNA model (same as MATLAB): `Q_k = G · q_std² · Gᵀ` where `G = [[dt²/2, 0], [0, dt²/2], [dt, 0], [0, dt]]`. This correctly captures the position-velocity cross-correlation from unmeasured acceleration.
+- `q_std = 0.1`, `r_std = 0.05` match MATLAB values (`Q = 0.01·I`, `R = 0.0025·I`). The original YAML values (`q_std=0.5`, `r_std=0.3`) caused steady-state `P_v ≈ 0.15 >> 0.006` — convergence never fired.
+- `ekf_converged` is re-evaluated every step (in both `predict()` and `update()`), so the flag drops back to false once the sensor loses the target and `P_v` grows above threshold (~5 s of predict-only).
+- The flag is Python native `bool` (not `numpy.bool_`) to satisfy the ROS 2 message field type assertion.
+
+**Why ROS 2 M3 differs from MATLAB:**
+- MATLAB runs all sensors in a single synchronised for-loop. Each ROS 2 `sensor_agent` node has its own independent timer — measurements arrive asynchronously, EKF steps fire at slightly different wall-clock times. This is the first step toward a true Discrete Event System (DES) architecture.
 
 ---
 
