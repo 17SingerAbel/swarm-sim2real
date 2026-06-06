@@ -10,12 +10,12 @@ from launch_ros.actions import Node
 def _hex_grid_positions(grid_size, node_spacing):
     dy = node_spacing * math.sqrt(3) / 2
     positions = []
-    for col in range(grid_size):
-        for row in range(grid_size):
-            x = col * node_spacing
-            y = row * dy + (node_spacing / 2.0 if col % 2 == 1 else 0.0)
+    for row in range(grid_size):
+        for col in range(grid_size):
+            x = col * node_spacing + (row % 2) * node_spacing / 2  # Stagger odd rows
+            y = row * node_spacing * math.sqrt(3)/2
             positions.append({
-                'sensor_id': col * grid_size + row,
+                'sensor_id': row * grid_size + col,
                 'x': x,
                 'y': y,
             })
