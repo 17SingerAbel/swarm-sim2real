@@ -51,8 +51,10 @@ Use this structure as the current source of truth.
 Root-level files are mostly meta/control files:
 
 - `AGENTS.md`
-- `CLAUDE.md`
+- `CLAUDE.md` (legacy reference only; do not follow Claude-specific workflow rules)
+- `ros2-design.md`
 - `plan.md`
+- `CHANGELOG.md`
 - `.gitignore`
 
 ## Primary MATLAB Files
@@ -176,7 +178,7 @@ Expected behavior:
 
 ## Current Development Stage
 The MATLAB simulation is complete and serves as the algorithmic baseline.
-ROS 2 implementation has begun: architecture is fully designed, M1 is in progress.
+ROS 2 implementation has begun: architecture is fully designed, M1-M3 are complete, and M4 distributed handover is the next major milestone unless the user says otherwise.
 
 Current priorities:
 
@@ -184,46 +186,64 @@ Current priorities:
 2. implement ROS 2 milestones in order (M1 → M2 → ... → M9)
 3. validate each milestone against MATLAB behavior before advancing
 
-The full ROS 2 architecture is documented in `ros2-design.md`. The milestone roadmap lives in `plan.md`.
+The full ROS 2 architecture is documented in `ros2-design.md`. Treat it as the authoritative ROS 2 design reference. The milestone roadmap lives in `plan.md`, but `plan.md` contains older centralized-coordinator planning notes; if it conflicts with `ros2-design.md`, follow `ros2-design.md`.
 
 ## Agent Working Rules
 These rules apply to any coding agent working in this repository.
 
 - Treat `matlab-sim/src/example_V47_Yeqi.m` as the active baseline unless the user asks to switch.
+- For any ROS 2 work, read `ros2-design.md` first and preserve its distributed DES architecture.
 - Do not edit archived versions in `matlab-sim/archive/versions/` unless the user explicitly requests it.
 - Do not treat `matlab-sim/archive/generated/` as active source.
 - Prefer behavior-preserving cleanup before algorithm changes.
 - Keep filesystem cleanup, refactoring, and logic changes as separate steps when possible.
 - When changing run/output paths, keep them inside `matlab-sim/generated/` unless the user asks otherwise.
 - When documenting behavior, prefer current file paths over historical ones.
+- Implement one milestone or one behavior slice at a time.
+- Validate behavior against MATLAB logs or deterministic ROS regression scenarios whenever possible.
+- Update `CHANGELOG.md` after every meaningful repository change, including docs-only changes.
+- If instructions disagree, prioritize in this order: user request, `AGENTS.md`, `ros2-design.md`, current code, `plan.md`, legacy `CLAUDE.md`.
 
-## Codex + Claude Collaboration Guidance
-The preferred workflow in this repository is:
+## Changelog Discipline
+`CHANGELOG.md` is the project memory log. It exists so the user and future Codex sessions can quickly recover context after several days away.
 
-- Codex does planning, design review, task decomposition, and validation.
-- Claude is used as a narrow execution worker for bounded coding tasks.
+For each meaningful change:
 
-If preparing work for another agent such as Claude:
+- Add a newest-first entry to `CHANGELOG.md`.
+- Use the format: date, short title, `Scope`, `Changed`, `Why`, `Verified`, and `Next`.
+- Mention tests, builds, simulations, or commands actually run. If no verification was run, say why, for example `Not run (docs-only change)`.
+- Keep entries concise but specific enough to reconstruct the work without reading the full diff.
+- Do not log generated artifacts or temporary files unless they are intentionally part of the project state.
+- If a change spans multiple turns, update the entry before handing control back to the user.
 
-- keep the task narrow
-- specify exactly which files may be changed
-- include clear acceptance criteria
-- avoid broad open-ended refactors
-- avoid assigning multiple architectural decisions in one prompt
-- prefer one behavior slice at a time
+## Codex Working Guidance
+The preferred workflow in this repository is now Codex-first.
 
-Good Claude tasks in this repo:
+- Codex should do the remaining planning, implementation, refactoring, validation, and documentation work directly.
+- Do not prepare handoff prompts for Claude unless the user explicitly asks for one.
+- Do not frame work as Claude tasks or assume Claude will execute implementation slices.
+- Keep the user involved in learning-heavy ROS 2 decisions, but do not stop at advice when the requested work can be implemented safely.
+- Prefer small, verifiable changes over broad rewrites.
+- Explain new ROS 2 concepts briefly when they affect the user's understanding or future choices.
+- For coding tasks, read the relevant files first, make the focused change, and run the closest available verification.
 
-- extract one helper function
-- clean one logging/output path
-- add one test or regression check
-- port one MATLAB subsystem into a ROS prototype
+Good Codex task shapes in this repo:
 
-Bad Claude tasks in this repo:
+- implement one ROS 2 milestone slice
+- port one MATLAB helper into a ROS/Python module
+- add or update one message/interface set
+- create one launch/config/test path
+- compare one ROS behavior against MATLAB logs
+- refactor one subsystem while preserving behavior
+- update project docs after an architectural decision
 
-- "port everything to ROS 2"
+Bad Codex task shapes in this repo:
+
+- "port everything to ROS 2" in one step
 - "clean the whole codebase"
 - "rewrite all MATLAB into Python"
+- introducing a central coordinator to simplify the distributed assignment problem
+- mixing filesystem cleanup, large refactors, and algorithm changes in one unverified edit
 
 ## Sim-to-Real Direction
 The intended future stack is:
@@ -236,18 +256,58 @@ The intended future stack is:
 
 Recommended porting strategy:
 
-- architecture is fully distributed DES — no central coordinator node
-- each sensor_agent node owns its FSM, EKF, and assignment logic
+- architecture is fully distributed DES: no central coordinator node and no `assignment_manager`
+- each `sensor_agent` node owns its FSM, EKF, bidding, assignment reconstruction, and self-assignment logic
+- sensors subscribe to target ground-truth topics in simulation, but detection is gated by distance inside `sensor_agent`
+- use global ROS topics plus software communication-range filtering for M4; realistic latency, packet loss, and inconsistent bid subsets are M8 concerns
 - validate in Crazyswarm2 SITL simulation before real hardware
 - preserve MATLAB behavior first, optimize later
+- keep Crazyflie-specific logic isolated in `swarm_cf_adapter`; `sensor_agent` must not depend on Crazyswarm2
 
 Hardware note:
 
 - user has explicitly chosen Crazyflie 2.0 as the target hardware
 
+## ROS 2 Architecture Rules
+These rules summarize `ros2-design.md` and should be followed for ROS 2 implementation.
+
+- Do not create a central `assignment_manager` or handover coordinator. Debug visibility should be handled by read-only observer nodes.
+- Package layout should follow the current distributed design:
+  - `swarm_interfaces` for custom messages
+  - `target_simulator` for target ground-truth motion
+  - `sensor_agent` for FSM, EKF, bidding, assignment reconstruction, and local role transitions
+  - `swarm_visualization` for RViz2 markers
+  - `swarm_bringup` for launch files and YAML configs
+- Keep EKF inside each `sensor_agent`; do not extract it into a separate runtime node.
+- Build `swarm_interfaces` before dependent packages.
+- Use milestone-specific launch/config naming such as `sim_m4.launch.py` and `sim_m4_params.yaml`.
+- Use sensor IDs `0-24` and target IDs `0-2` in ROS 2 code.
+- Preserve deterministic assignment behavior: all sensors that receive the same request and bids should reconstruct and solve the same assignment problem.
+- Use event topics for handover requests, bids, and commitments:
+  - `/swarm/handover_request`
+  - `/swarm/bids`
+  - `/swarm/commitment`
+- Use `RELIABLE` QoS for event messages and lighter QoS for high-rate visualization/state topics when appropriate.
+
+## ROS 2 Milestone Status
+Current milestone status from `ros2-design.md`:
+
+| Milestone | Status | Focus |
+|-----------|--------|-------|
+| M1 | Done | Minimal running graph: 1 sensor, 3 targets, visible FSM transitions |
+| M2 | Done | 25-sensor hex grid launched from YAML config |
+| M3 | Done | Per-sensor EKF, noisy measurements, estimate topics |
+| M4 | Next/in progress | Distributed handover: request, bidding, reconstruction, self-assignment |
+| M5 | Planned | Multi-target conflict resolution and expanded joint assignment scope |
+| M6 | Planned | RViz2 visualization |
+| M7 | Planned | Crazyflie/Crazyswarm2 adapter and simulation integration |
+| M8 | Planned | Real communication constraints |
+| M9 | Planned | Real Crazyflie 2.0 hardware validation |
+
 ## Related Documents
 - `ros2-design.md` — authoritative ROS 2 architecture reference (read this first for any ROS 2 session)
-- `plan.md` — ROS 2 sim-to-real roadmap and porting strategy
-- `CLAUDE.md` — Claude-specific repository guidance
+- `plan.md` — ROS 2 sim-to-real roadmap; contains some older centralized-coordinator notes superseded by `ros2-design.md`
+- `CHANGELOG.md` — newest-first project memory log; update after meaningful changes
+- `CLAUDE.md` — legacy Claude-specific guidance; keep only as historical context unless the user explicitly asks about it
 - `matlab-sim/docs/design.md` — MATLAB system design notes
 - `matlab-sim/docs/debug_interception_analysis.md` — bug and logic analysis

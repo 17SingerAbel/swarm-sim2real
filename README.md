@@ -43,6 +43,21 @@ Full architecture decisions, ROS graph, message definitions, and Gazebo integrat
 
 ---
 
+## Project Memory Log
+
+Use [`CHANGELOG.md`](CHANGELOG.md) as the running memory log for this project.
+
+Every meaningful repository change should add a newest-first entry that records:
+
+- what files or subsystem changed
+- why the change was made
+- how it was verified
+- what the next likely step is
+
+This is intentionally a project work log, not only a release changelog. When returning after a few days, read the newest `CHANGELOG.md` entries first, then check [`AGENTS.md`](AGENTS.md), [`ros2-design.md`](ros2-design.md), and the current git diff.
+
+---
+
 ## Simulation Parameters
 
 | Parameter | Value |
@@ -90,6 +105,7 @@ swarm-sim2real/
       swarm_bringup/        # launch files and YAML configs (ament_python)
   ros2-design.md            # full architecture reference document
   plan.md                   # ROS 2 porting roadmap
+  CHANGELOG.md              # newest-first project memory log
 ```
 
 ---
