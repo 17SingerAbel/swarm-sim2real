@@ -46,6 +46,7 @@ class SensorAgentNode(Node):
         self.declare_parameter('grid_size', 5)
         self.declare_parameter('node_spacing', 12.0)
         self.declare_parameter('handover_lookahead', 2.0)
+        self.declare_parameter('intercept_arrival_tolerance', 1.0)
 
         self.sensor_id = self.get_parameter('sensor_id').value
         self.pos_x = self.get_parameter('pos_x').value
@@ -63,6 +64,7 @@ class SensorAgentNode(Node):
         self.bidding_window = self.get_parameter('bidding_window').value
         self.max_interceptors = self.get_parameter('max_interceptors').value
         self.handover_lookahead = self.get_parameter('handover_lookahead').value
+        self.intercept_arrival_tolerance = self.get_parameter('intercept_arrival_tolerance').value
         grid_size = self.get_parameter('grid_size').value
         node_spacing = self.get_parameter('node_spacing').value
 
@@ -210,6 +212,14 @@ class SensorAgentNode(Node):
                 self.get_logger().info(
                     f'INTERCEPTING → TRACKING  target={self.assigned_target_id}')
                 self._publish_acquisition(request_id, self.assigned_target_id)
+            elif (self._intercept_goal is not None
+                    and _dist((self.pos_x, self.pos_y), self._intercept_goal)
+                    <= self.intercept_arrival_tolerance):
+                self.get_logger().info(
+                    f's{self.sensor_id}: reached intercept goal without detection '
+                    f'→ RETURNING_HOME')
+                self._release_intercept_assignment()
+                self.fsm_state = 'RETURNING_HOME'
 
         elif self.fsm_state == 'RETURNING_HOME':
             if _dist((self.pos_x, self.pos_y), (self.home_x, self.home_y)) < 0.5:
@@ -435,12 +445,15 @@ class SensorAgentNode(Node):
             self.get_logger().info(
                 f's{self.sensor_id}: acquisition by s{msg.sensor_id} '
                 f'for {rid} → RETURNING_HOME')
-            self._intercept_goal = None
-            self._intercept_target_id = -1
-            self._intercept_request_id = ''
-            self.role = 'NONE'
-            self.assigned_target_id = -1
+            self._release_intercept_assignment()
             self.fsm_state = 'RETURNING_HOME'
+
+    def _release_intercept_assignment(self):
+        self._intercept_goal = None
+        self._intercept_target_id = -1
+        self._intercept_request_id = ''
+        self.role = 'NONE'
+        self.assigned_target_id = -1
 
     # ------------------------------------------------------------------
     # Movement
