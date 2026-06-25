@@ -6,6 +6,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from swarm_interfaces.msg import (
+    AcquisitionMsg,
     BidMsg,
     CommitmentMsg,
     HandoverRequest,
@@ -89,6 +90,7 @@ class SensorAgentNode(Node):
         self._bidding_timers = {}      # request_id → timer handle
         self._intercept_goal = None    # (x, y) for INTERCEPTING movement
         self._intercept_target_id = -1
+        self._intercept_request_id = ''
         self._my_requests = {}         # request_id → target_id (requests WE fired)
         self._commitment_counts = {}   # request_id → int (commitments received so far)
 
@@ -117,6 +119,10 @@ class SensorAgentNode(Node):
             CommitmentMsg, '/swarm/commitment',
             self._commitment_cb, event_qos,
         )
+        self.create_subscription(
+            AcquisitionMsg, '/swarm/acquisition',
+            self._acquisition_cb, event_qos,
+        )
 
         # ---- Publishers ----
         self.state_pub = self.create_publisher(
@@ -128,6 +134,8 @@ class SensorAgentNode(Node):
         self._bid_pub = self.create_publisher(BidMsg, '/swarm/bids', event_qos)
         self._commitment_pub = self.create_publisher(
             CommitmentMsg, '/swarm/commitment', event_qos)
+        self._acquisition_pub = self.create_publisher(
+            AcquisitionMsg, '/swarm/acquisition', event_qos)
 
         self.create_timer(self.dt, self._fsm_step)
         self.get_logger().info(
@@ -194,11 +202,14 @@ class SensorAgentNode(Node):
             if self._intercept_target_id in in_range:
                 self.assigned_target_id = self._intercept_target_id
                 self.role = 'SECONDARY_TRACKER'
+                request_id = self._intercept_request_id
                 self._intercept_goal = None
                 self._intercept_target_id = -1
+                self._intercept_request_id = ''
                 self.fsm_state = 'TRACKING'
                 self.get_logger().info(
                     f'INTERCEPTING → TRACKING  target={self.assigned_target_id}')
+                self._publish_acquisition(request_id, self.assigned_target_id)
 
         elif self.fsm_state == 'RETURNING_HOME':
             if _dist((self.pos_x, self.pos_y), (self.home_x, self.home_y)) < 0.5:
@@ -238,6 +249,10 @@ class SensorAgentNode(Node):
         msg.requesting_sensor_id = self.sensor_id
         msg.requesting_sensor_x = self.pos_x
         msg.requesting_sensor_y = self.pos_y
+        msg.target_x = float(ekf.x[0])
+        msg.target_y = float(ekf.x[1])
+        msg.target_vx = float(ekf.x[2])
+        msg.target_vy = float(ekf.x[3])
         msg.intercept_x = float(ekf.x[0] + ekf.x[2] * t_loss)
         msg.intercept_y = float(ekf.x[1] + ekf.x[3] * t_loss)
         msg.predicted_loss_time = now_sec + t_loss
@@ -272,17 +287,22 @@ class SensorAgentNode(Node):
             return
 
         ekf = self.ekfs.get(msg.calling_target_id)
-        if ekf is None or not ekf.initialized:
-            return
+        if ekf is not None and ekf.initialized:
+            confidence = 1.0 if ekf.converged else 0.3
+            target_vel = (float(ekf.x[2]), float(ekf.x[3]))
+            target_current_pos = (float(ekf.x[0]), float(ekf.x[1]))
+        else:
+            confidence = 0.3
+            target_vel = (float(msg.target_vx), float(msg.target_vy))
+            target_current_pos = (float(msg.target_x), float(msg.target_y))
 
-        confidence = 1.0 if ekf.converged else 0.3
         cost = calculate_bid_cost(
             sensor_pos=(self.pos_x, self.pos_y),
             home_pos=(self.home_x, self.home_y),
             intercept_point=(msg.intercept_x, msg.intercept_y),
-            target_vel=(float(ekf.x[2]), float(ekf.x[3])),
+            target_vel=target_vel,
             confidence=confidence,
-            target_current_pos=(float(ekf.x[0]), float(ekf.x[1])),
+            target_current_pos=target_current_pos,
             wsn_width=self._wsn_width,
             wsn_height=self._wsn_height,
             sensor_velocity=self.max_speed,
@@ -345,6 +365,7 @@ class SensorAgentNode(Node):
 
         self._intercept_goal = (req.intercept_x, req.intercept_y)
         self._intercept_target_id = target_id
+        self._intercept_request_id = request_id
         self.assigned_target_id = target_id
         self.role = 'INTERCEPTOR_CANDIDATE'
         self.fsm_state = 'INTERCEPTING'
@@ -367,24 +388,59 @@ class SensorAgentNode(Node):
         self.get_logger().debug(
             f's{self.sensor_id}: s{msg.sensor_id} committed to T{msg.assigned_target_id}')
 
-        # If this commitment is for a request WE fired, count it
+        # Commitments mean "accepted assignment"; acquisition completes the handover.
         rid = msg.request_id
         if rid not in self._my_requests:
             return
         self._commitment_counts[rid] = self._commitment_counts.get(rid, 0) + 1
-        if (self._commitment_counts[rid] >= self.max_interceptors
+
+    def _publish_acquisition(self, request_id, target_id):
+        if not request_id:
+            return
+
+        msg = AcquisitionMsg()
+        msg.request_id = request_id
+        msg.sensor_id = self.sensor_id
+        msg.target_id = target_id
+        msg.x = self.pos_x
+        msg.y = self.pos_y
+        msg.stamp = self.get_clock().now().to_msg()
+        self._acquisition_pub.publish(msg)
+        self.get_logger().info(
+            f's{self.sensor_id}: Acquisition {request_id} T{target_id}')
+
+    def _acquisition_cb(self, msg):
+        if msg.sensor_id == self.sensor_id:
+            return
+
+        rid = msg.request_id
+
+        if (rid in self._my_requests
                 and self.fsm_state == 'TRACKING'
                 and self.assigned_target_id == self._my_requests[rid]):
             self.get_logger().info(
-                f's{self.sensor_id}: handover complete → RETURNING_HOME '
-                f'(T{self.assigned_target_id}, {self._commitment_counts[rid]} interceptors)')
+                f's{self.sensor_id}: acquisition by s{msg.sensor_id} '
+                f'→ RETURNING_HOME (T{self.assigned_target_id})')
             self._handover_fired.discard(self.assigned_target_id)
             self.role = 'NONE'
             self.assigned_target_id = -1
             self.fsm_state = 'RETURNING_HOME'
-            # Clean up request tracking
             self._my_requests.pop(rid, None)
             self._commitment_counts.pop(rid, None)
+            return
+
+        if (self.fsm_state == 'INTERCEPTING'
+                and self._intercept_request_id == rid
+                and self._intercept_target_id == msg.target_id):
+            self.get_logger().info(
+                f's{self.sensor_id}: acquisition by s{msg.sensor_id} '
+                f'for {rid} → RETURNING_HOME')
+            self._intercept_goal = None
+            self._intercept_target_id = -1
+            self._intercept_request_id = ''
+            self.role = 'NONE'
+            self.assigned_target_id = -1
+            self.fsm_state = 'RETURNING_HOME'
 
     # ------------------------------------------------------------------
     # Movement

@@ -12,6 +12,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/HandoverRequest.msg"
   "msg/BidMsg.msg"
   "msg/CommitmentMsg.msg"
+  "msg/AcquisitionMsg.msg"
   DEPENDENCIES builtin_interfaces
 )
 

@@ -2,6 +2,10 @@ int32 calling_target_id
 int32 requesting_sensor_id
 float64 requesting_sensor_x
 float64 requesting_sensor_y
+float64 target_x
+float64 target_y
+float64 target_vx
+float64 target_vy
 float64 intercept_x
 float64 intercept_y
 float64 predicted_loss_time
